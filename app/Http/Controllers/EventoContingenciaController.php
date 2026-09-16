@@ -3,7 +3,9 @@
 namespace App\Http\Controllers;
 
 use App\Models\EventoContingencia;
+use App\Models\FacturaElectronica;
 use App\Services\SiatService;
+use App\Services\SucursalContext;
 use App\Services\TarBuilder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -15,7 +17,12 @@ class EventoContingenciaController extends Controller
     public function index()
     {
         $eventos = EventoContingencia::orderByDesc('id')->paginate(20);
-        $abierto = EventoContingencia::where('estado', 'abierto')->latest('id')->first();
+        $sucursalActiva = SucursalContext::sucursal();
+        $abierto = EventoContingencia::where('estado', 'abierto')
+            ->where(function ($q) use ($sucursalActiva) {
+                $q->where('sucursal_id', $sucursalActiva->id)->orWhereNull('sucursal_id');
+            })
+            ->latest('id')->first();
 
         return view('contingencias.index', compact('eventos', 'abierto'));
     }
@@ -27,24 +34,38 @@ class EventoContingenciaController extends Controller
             'descripcion' => 'nullable|string|max:500',
         ]);
 
-        if (EventoContingencia::where('estado', 'abierto')->exists()) {
-            return back()->with('error', 'Ya hay un evento abierto. Ciérralo antes de abrir otro.');
+        $sucursal = SucursalContext::sucursal();
+        $puntoVenta = SucursalContext::puntoVenta();
+
+        if (EventoContingencia::where('estado', 'abierto')
+            ->where(function ($q) use ($sucursal) {
+                $q->where('sucursal_id', $sucursal->id)->orWhereNull('sucursal_id');
+            })->exists()) {
+            return back()->with('error', 'Ya hay un evento abierto para esta sucursal. Ciérralo antes de abrir otro.');
         }
 
         try {
-            $resp = $siat->registrarEvento((int) $data['codigo_evento'], 'inicio');
+            $resp = $siat->registrarEvento((int) $data['codigo_evento'], 'inicio', null, [
+                'codigoSucursal' => (int) $sucursal->codigo,
+                'codigoPuntoVenta' => (int) $puntoVenta->codigo,
+                'cuis' => $puntoVenta->cuis,
+            ]);
         } catch (\Throwable $e) {
             return back()->with('error', 'El SIN no aceptó la apertura: '.$e->getMessage());
         }
 
         EventoContingencia::create([
             'codigo_evento' => $data['codigo_evento'],
-            'descripcion' => $data['descripcion']
+            'descripcion' => ($data['descripcion'] ?? null)
                 ?: (EventoContingencia::CODIGOS[$data['codigo_evento']] ?? 'Evento significativo'),
             'fecha_inicio' => now(),
             'estado' => 'abierto',
             'codigo_recepcion_evento' => $resp['codigoRecepcionEvento'] ?? null,
             'usuario_id' => Auth::id(),
+            'sucursal_id' => $sucursal->id,
+            'punto_venta_id' => $puntoVenta->id,
+            'codigo_sucursal' => (int) $sucursal->codigo,
+            'codigo_punto_venta' => (int) $puntoVenta->codigo,
         ]);
 
         return back()->with('exito', 'Evento registrado ante el SIN');
@@ -56,8 +77,13 @@ class EventoContingenciaController extends Controller
             return back()->with('error', 'El evento ya está cerrado.');
         }
 
+        $evento->loadMissing('sucursal', 'puntoVenta');
         try {
-            $siat->registrarEvento($evento->codigo_evento, 'fin');
+            $siat->registrarEvento($evento->codigo_evento, 'fin', null, [
+                'codigoSucursal' => (int) ($evento->sucursal->codigo ?? $evento->codigo_sucursal ?? 0),
+                'codigoPuntoVenta' => (int) ($evento->puntoVenta->codigo ?? $evento->codigo_punto_venta ?? 0),
+                'cuis' => $evento->puntoVenta?->cuis,
+            ]);
         } catch (\Throwable $e) {
             return back()->with('error', 'El SIN no aceptó el cierre: '.$e->getMessage());
         }
@@ -69,14 +95,24 @@ class EventoContingenciaController extends Controller
 
     public function empaquetar(EventoContingencia $evento, SiatService $siat)
     {
-        if ($evento->estado !== 'cerrado') {
+        if (! in_array($evento->estado, ['cerrado', 'enviado'], true)) {
             return back()->with('error', 'Cierra el evento antes de empaquetar.');
         }
 
+        // Facturas del evento + huérfanas de contingencia de la misma
+        // sucursal (emitidas sin evento abierto), en lotes de 500 (límite SIN).
         $facturas = $evento->facturas()
             ->where('tipo_emision', 2)
             ->where('en_paquete', false)
             ->whereNotNull('xml_firmado')
+            ->union(
+                FacturaElectronica::where('tipo_emision', 2)
+                    ->where('en_paquete', false)
+                    ->whereNotNull('xml_firmado')
+                    ->whereNull('evento_id')
+                    ->where('sucursal_id', $evento->sucursal_id)
+            )
+            ->limit(TarBuilder::MAX_POR_PAQUETE)
             ->get();
 
         if ($facturas->isEmpty()) {
@@ -89,14 +125,24 @@ class EventoContingenciaController extends Controller
         }
         $binario = $tar->contenidoTarGz();
 
+        $evento->loadMissing('sucursal', 'puntoVenta');
         try {
-            $resp = $siat->recepcionPaquete($binario, $facturas->count());
+            $resp = $siat->recepcionPaquete($binario, $facturas->count(), [
+                'codigoSucursal' => (int) ($evento->sucursal->codigo ?? $evento->codigo_sucursal ?? 0),
+                'codigoPuntoVenta' => (int) ($evento->puntoVenta->codigo ?? $evento->codigo_punto_venta ?? 0),
+                'cuis' => $evento->puntoVenta?->cuis,
+            ]);
         } catch (\Throwable $e) {
             return back()->with('error', 'El SIN no aceptó el paquete: '.$e->getMessage());
         }
 
         $path = 'paquetes/evento-'.$evento->id.'-'.date('Ymd-His').'.tar.gz';
         Storage::disk('local')->put($path, $binario);
+        if (hash('sha256', (string) Storage::disk('local')->get($path)) !== hash('sha256', $binario)) {
+            Storage::disk('local')->delete($path);
+
+            return back()->with('error', 'El paquete se corrompió al guardarse. Intenta de nuevo.');
+        }
 
         DB::transaction(function () use ($evento, $facturas, $path, $resp) {
             $evento->update([
@@ -105,12 +151,25 @@ class EventoContingenciaController extends Controller
                 'codigo_recepcion_paquete' => $resp['codigoRecepcion'] ?? null,
                 'estado_paquete' => 'enviado',
             ]);
-            foreach ($facturas as $f) {
-                $f->update(['en_paquete' => true]);
-            }
+            $ids = $facturas->map->id->all();
+            FacturaElectronica::whereIn('id', $ids)
+                ->update(['en_paquete' => true, 'evento_id' => $evento->id]);
         });
 
-        return back()->with('exito', 'Paquete enviado. Recepción: '.($resp['codigoRecepcion'] ?? '?'));
+        $mensaje = 'Paquete enviado ('.$facturas->count().' factura(s)). Recepción: '.($resp['codigoRecepcion'] ?? '?');
+        $restantes = FacturaElectronica::where('tipo_emision', 2)
+            ->where('en_paquete', false)
+            ->where(function ($q) use ($evento) {
+                $q->where('evento_id', $evento->id)
+                    ->orWhere(function ($q2) use ($evento) {
+                        $q2->whereNull('evento_id')->where('sucursal_id', $evento->sucursal_id);
+                    });
+            })->count();
+        if ($restantes > 0) {
+            $mensaje .= " Quedan {$restantes} pendiente(s) para el siguiente lote (máx. ".TarBuilder::MAX_POR_PAQUETE.' por paquete).';
+        }
+
+        return back()->with('exito', $mensaje);
     }
 
     public function validar(EventoContingencia $evento, SiatService $siat)

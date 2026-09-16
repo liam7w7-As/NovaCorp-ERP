@@ -312,24 +312,48 @@ class SiatService
             throw new \RuntimeException('No se pudo leer el .p12 (¿contraseña incorrecta?).');
         }
 
+        // Enveloped XMLDSig: el digest se calcula sobre el documento SIN la
+        // firma (equivale a aplicar la transform enveloped-signature, ya que
+        // el nodo <Signature> se inserta después).
         $doc = new \DOMDocument('1.0', 'UTF-8');
-        $doc->loadXML($xml);
+        if (! $doc->loadXML($xml)) {
+            throw new \RuntimeException('XML inválido para firma.');
+        }
         $canon = $doc->C14N(true, false);
+        if ($canon === false) {
+            throw new \RuntimeException('No se pudo canonicalizar el XML.');
+        }
         $digest = base64_encode(hash('sha256', $canon, true));
 
-        $signedInfo = '<SignedInfo xmlns="http://www.w3.org/2000/09/xmldsig#">'
-            .'<CanonicalizationMethod Algorithm="http://www.w3.org/TR/2001/REC-xml-c14n-20010315"/>'
+        $dsig = 'http://www.w3.org/2000/09/xmldsig#';
+        $excC14n = 'http://www.w3.org/2001/10/xml-exc-c14n#';
+        $signedInfo = '<SignedInfo xmlns="'.$dsig.'">'
+            .'<CanonicalizationMethod Algorithm="'.$excC14n.'"/>'
             .'<SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"/>'
-            .'<Reference URI=""><Transforms><Transform Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature"/></Transforms>'
+            .'<Reference URI="">'
+            .'<Transforms>'
+            .'<Transform Algorithm="'.$dsig.'enveloped-signature"/>'
+            .'<Transform Algorithm="'.$excC14n.'"/>'
+            .'</Transforms>'
             .'<DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/>'
-            .'<DigestValue>'.$digest.'</DigestValue></Reference></SignedInfo>';
+            .'<DigestValue>'.$digest.'</DigestValue>'
+            .'</Reference>'
+            .'</SignedInfo>';
 
-        $ok = openssl_sign($signedInfo, $firma, $certs['pkey'], OPENSSL_ALGO_SHA256);
+        // Se firma el SignedInfo YA canonicalizado (Exclusive C14N),
+        // igual que lo hará cualquier verificador del SIN.
+        $tmp = new \DOMDocument('1.0', 'UTF-8');
+        $tmp->loadXML($signedInfo);
+        $canonSi = $tmp->C14N(true, false);
+        if ($canonSi === false) {
+            throw new \RuntimeException('No se pudo canonicalizar el SignedInfo.');
+        }
+        $ok = openssl_sign($canonSi, $firma, $certs['pkey'], OPENSSL_ALGO_SHA256);
         if (! $ok) {
             throw new \RuntimeException('Falló la firma RSA del XML.');
         }
         $x509 = preg_replace('/-----(BEGIN|END) CERTIFICATE-----|\s/', '', $certs['cert']);
-        $signature = '<Signature xmlns="http://www.w3.org/2000/09/xmldsig#">'.$signedInfo
+        $signature = '<Signature xmlns="'.$dsig.'">'.$signedInfo
             .'<SignatureValue>'.base64_encode($firma).'</SignatureValue>'
             .'<KeyInfo><X509Data><X509Certificate>'.$x509.'</X509Certificate></X509Data></KeyInfo></Signature>';
 
@@ -759,16 +783,17 @@ class SiatService
     /**
      * Registra inicio/fin de evento significativo ante el SIN.
      * $fase: 'inicio' | 'fin'. Códigos 1-7 según SIN.
+     * $contexto: ['codigoSucursal', 'codigoPuntoVenta', 'cuis'] del PV afectado.
      */
-    public function registrarEvento(int $codigoEvento, string $fase, ?string $fechaHora = null): array
+    public function registrarEvento(int $codigoEvento, string $fase, ?string $fechaHora = null, array $contexto = []): array
     {
         $params = [
             'codigoAmbiente' => SiatConfig::codigoAmbienteSin(),
             'codigoSistema' => (string) SiatConfig::get('siat_codigo_sistema'),
             'nit' => (int) SiatConfig::get('siat_nit'),
-            'codigoSucursal' => (int) SiatConfig::get('siat_sucursal', '0'),
-            'codigoPuntoVenta' => (int) SiatConfig::get('siat_punto_venta', '0'),
-            'cuis' => (string) SiatConfig::get('siat_cuis'),
+            'codigoSucursal' => (int) ($contexto['codigoSucursal'] ?? SiatConfig::get('siat_sucursal', '0')),
+            'codigoPuntoVenta' => (int) ($contexto['codigoPuntoVenta'] ?? SiatConfig::get('siat_punto_venta', '0')),
+            'cuis' => (string) ($contexto['cuis'] ?? SiatConfig::get('siat_cuis')),
             'codigoMotivoEvento' => $codigoEvento,
             'fechaHoraInicioEvento' => $fase === 'inicio'
                 ? ($fechaHora ?? now()->format('Y-m-d\TH:i:s.v'))
@@ -815,16 +840,16 @@ class SiatService
 
     // ---------------- Paquetes de contingencia ----------------
 
-    public function recepcionPaquete(string $tarGzBinario, int $cantidadFacturas): array
+    public function recepcionPaquete(string $tarGzBinario, int $cantidadFacturas, array $contexto = []): array
     {
         $hash = hash('sha256', $tarGzBinario);
         $params = [
             'codigoAmbiente' => SiatConfig::codigoAmbienteSin(),
             'codigoSistema' => (string) SiatConfig::get('siat_codigo_sistema'),
             'nit' => (int) SiatConfig::get('siat_nit'),
-            'codigoSucursal' => (int) SiatConfig::get('siat_sucursal', '0'),
-            'codigoPuntoVenta' => (int) SiatConfig::get('siat_punto_venta', '0'),
-            'cuis' => (string) SiatConfig::get('siat_cuis'),
+            'codigoSucursal' => (int) ($contexto['codigoSucursal'] ?? SiatConfig::get('siat_sucursal', '0')),
+            'codigoPuntoVenta' => (int) ($contexto['codigoPuntoVenta'] ?? SiatConfig::get('siat_punto_venta', '0')),
+            'cuis' => (string) ($contexto['cuis'] ?? SiatConfig::get('siat_cuis')),
             'cantidadFacturas' => $cantidadFacturas,
             'hashArchivo' => $hash,
         ];
