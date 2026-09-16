@@ -12,6 +12,7 @@ use Illuminate\Http\Client\RequestException;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -161,6 +162,8 @@ class MetaWhatsappService
             $mediaId = Arr::get($mediaResponse->json(), 'id');
 
             if (! $mediaId) {
+                Storage::disk('public')->delete($path);
+
                 throw ValidationException::withMessages([
                     'archivo' => 'Meta no devolvió el identificador del archivo subido.',
                 ]);
@@ -173,6 +176,7 @@ class MetaWhatsappService
                 ->post($this->urlMensajes($canal), $payload)
                 ->throw();
         } catch (RequestException $exception) {
+            Storage::disk('public')->delete($path);
             $canal->forceFill([
                 'estado' => 'error',
                 'ultimo_error' => $exception->response?->json('error.message') ?? $exception->getMessage(),
@@ -255,6 +259,20 @@ class MetaWhatsappService
         return $canal instanceof CanalWhatsapp
             && filled($canal->phone_number_id)
             && filled($this->tokenParaCanal($canal));
+    }
+
+    /**
+     * Ventana de atención de 24h de Meta: solo hay vía libre para texto
+     * libre si el contacto escribió en las últimas 24 horas. Fuera de
+     * ventana se requieren plantillas (aún no implementadas): Meta
+     * rechazaría el envío y aquí se avisa antes de intentarlo.
+     */
+    public function ventanaAtencionAbierta(Lead $lead): bool
+    {
+        return MensajeWhatsapp::where('lead_id', $lead->id)
+            ->where('direccion', 'entrante')
+            ->where('ocurrio_at', '>=', now()->subDay())
+            ->exists();
     }
 
     /** @return array{ok: bool, message: string, canal: array<string, mixed>} */
@@ -386,73 +404,83 @@ class MetaWhatsappService
 
     private function resolverLead(string $telefono, array $value, ?CanalWhatsapp $canal, CarbonImmutable $fecha): Lead
     {
-        $lead = Lead::query()
-            ->where('telefono_normalizado', $telefono)
-            ->when($canal, fn ($query) => $query->where('canal_whatsapp_id', $canal->id))
-            ->latest('id')
-            ->first();
+        return DB::transaction(function () use ($telefono, $value, $canal, $fecha) {
+            // Reutilizar el lead ABIERTO más reciente (uno cerrado es una
+            // oportunidad terminada: el contacto nuevo abre otra).
+            $lead = Lead::query()
+                ->where('telefono_normalizado', $telefono)
+                ->when($canal, fn ($query) => $query->where('canal_whatsapp_id', $canal->id))
+                ->whereNull('cerrado_at')
+                ->lockForUpdate()
+                ->latest('id')
+                ->first();
 
-        if ($lead instanceof Lead) {
-            $nombre = Arr::get($value, 'contacts.0.profile.name');
-            $cambios = [];
+            if ($lead instanceof Lead) {
+                $nombre = Arr::get($value, 'contacts.0.profile.name');
+                $cambios = [];
 
-            if (! $lead->nombre && $nombre) {
-                $cambios['nombre'] = $nombre;
+                if (! $lead->nombre && $nombre) {
+                    $cambios['nombre'] = $nombre;
+                }
+
+                if (! $lead->vendedor_id && $canal instanceof CanalWhatsapp) {
+                    $cambios['vendedor_id'] = $this->siguienteVendedorId($canal);
+                }
+
+                if ($cambios !== []) {
+                    $lead->forceFill($cambios)->save();
+                }
+
+                return $lead;
             }
 
-            if (! $lead->vendedor_id && $canal instanceof CanalWhatsapp) {
-                $cambios['vendedor_id'] = $this->siguienteVendedorId($canal);
-            }
-
-            if ($cambios !== []) {
-                $lead->forceFill($cambios)->save();
-            }
-
-            return $lead;
-        }
-
-        return Lead::create([
-            'etapa_crm_id' => EtapaCrm::inicial()->id,
-            'canal_whatsapp_id' => $canal?->id,
-            'vendedor_id' => $canal instanceof CanalWhatsapp ? $this->siguienteVendedorId($canal) : null,
-            'nombre' => Arr::get($value, 'contacts.0.profile.name'),
-            'telefono' => $telefono,
-            'telefono_normalizado' => $telefono,
-            'origen' => 'whatsapp',
-            'valor_estimado' => 0,
-            'ultima_interaccion_at' => $fecha,
-            'etapa_actualizada_at' => $fecha,
-        ]);
+            return Lead::create([
+                'etapa_crm_id' => EtapaCrm::inicial()->id,
+                'canal_whatsapp_id' => $canal?->id,
+                'vendedor_id' => $canal instanceof CanalWhatsapp ? $this->siguienteVendedorId($canal) : null,
+                'nombre' => Arr::get($value, 'contacts.0.profile.name'),
+                'telefono' => $telefono,
+                'telefono_normalizado' => $telefono,
+                'origen' => 'whatsapp',
+                'valor_estimado' => 0,
+                'ultima_interaccion_at' => $fecha,
+                'etapa_actualizada_at' => $fecha,
+            ]);
+        });
     }
 
     private function siguienteVendedorId(CanalWhatsapp $canal): ?int
     {
-        /** @var Collection<int, int> $vendedores */
-        $vendedores = $canal->vendedores()
-            ->where('activo', true)
-            ->orderBy('users.id')
-            ->pluck('users.id')
-            ->values();
+        return DB::transaction(function () use ($canal) {
+            $canal = CanalWhatsapp::whereKey($canal->id)->lockForUpdate()->firstOrFail();
 
-        if ($vendedores->isEmpty()) {
-            return null;
-        }
+            /** @var Collection<int, int> $vendedores */
+            $vendedores = $canal->vendedores()
+                ->where('activo', true)
+                ->orderBy('users.id')
+                ->pluck('users.id')
+                ->values();
 
-        if ($vendedores->count() === 1) {
-            $vendedorId = (int) $vendedores->first();
+            if ($vendedores->isEmpty()) {
+                return null;
+            }
+
+            if ($vendedores->count() === 1) {
+                $vendedorId = (int) $vendedores->first();
+                $canal->forceFill(['ultimo_vendedor_asignado_id' => $vendedorId])->save();
+
+                return $vendedorId;
+            }
+
+            $ultimoAsignado = $canal->ultimo_vendedor_asignado_id;
+            $indiceActual = $ultimoAsignado ? $vendedores->search((int) $ultimoAsignado, true) : false;
+            $siguienteIndice = $indiceActual === false ? 0 : (((int) $indiceActual + 1) % $vendedores->count());
+            $vendedorId = (int) $vendedores->get($siguienteIndice);
+
             $canal->forceFill(['ultimo_vendedor_asignado_id' => $vendedorId])->save();
 
             return $vendedorId;
-        }
-
-        $ultimoAsignado = $canal->ultimo_vendedor_asignado_id;
-        $indiceActual = $ultimoAsignado ? $vendedores->search((int) $ultimoAsignado, true) : false;
-        $siguienteIndice = $indiceActual === false ? 0 : (((int) $indiceActual + 1) % $vendedores->count());
-        $vendedorId = (int) $vendedores->get($siguienteIndice);
-
-        $canal->forceFill(['ultimo_vendedor_asignado_id' => $vendedorId])->save();
-
-        return $vendedorId;
+        });
     }
 
     private function actualizarEstado(array $status): int

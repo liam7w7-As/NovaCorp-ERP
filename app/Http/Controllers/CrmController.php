@@ -23,6 +23,9 @@ use Illuminate\View\View;
 
 class CrmController extends Controller
 {
+    /** Tope del tablero: el kanban pagina en cliente, no trae miles de filas. */
+    public const MAX_LEADS_TABLERO = 500;
+
     public function index(Request $request): View
     {
         $usuario = $request->user();
@@ -47,7 +50,11 @@ class CrmController extends Controller
             ->when($vendedorId > 0, fn (Builder $query) => $query->where('vendedor_id', $vendedorId))
             ->latest('etapa_actualizada_at')
             ->latest('id')
+            ->take(self::MAX_LEADS_TABLERO + 1)
             ->get();
+
+        $hayMas = $leads->count() > self::MAX_LEADS_TABLERO;
+        $leads = $leads->take(self::MAX_LEADS_TABLERO);
 
         $hace48Horas = now()->subHours(48);
         $hace4Horas = now()->subHours(4);
@@ -74,6 +81,7 @@ class CrmController extends Controller
             'canalId' => $canalId,
             'vendedorId' => $vendedorId,
             'seguimiento' => $seguimiento,
+            'hayMas' => $hayMas,
         ]);
     }
 
@@ -83,6 +91,7 @@ class CrmController extends Controller
             ->with(['etapa', 'canalWhatsapp', 'vendedor', 'mensajesWhatsapp.enviadoPor'])
             ->findOrFail($lead->id);
         $puedeEnviar = $whatsapp->canalPuedeEnviar($lead->canalWhatsapp);
+        $ventanaAbierta = $whatsapp->ventanaAtencionAbierta($lead);
 
         return response()->json([
             'lead' => [
@@ -100,6 +109,8 @@ class CrmController extends Controller
                 'notas' => $lead->notas,
                 'puede_enviar' => $puedeEnviar,
                 'motivo_envio' => $puedeEnviar ? null : 'Configura token y Phone Number ID para enviar desde Meta.',
+                'ventana_abierta' => $ventanaAbierta,
+                'motivo_ventana' => $ventanaAbierta ? null : 'Fuera de la ventana de 24h: Meta puede rechazar texto libre (usa respuesta a su último mensaje para reabrirla).',
                 'ultima_interaccion' => $lead->ultima_interaccion_at?->format('d/m/Y H:i:s'),
                 'creado' => $lead->created_at?->format('d/m/Y H:i:s'),
                 'etapa_actualizada' => $lead->etapa_actualizada_at?->format('d/m/Y H:i:s'),
@@ -115,7 +126,7 @@ class CrmController extends Controller
             ->findOrFail($lead->id);
         $data = $request->validate([
             'mensaje' => ['nullable', 'required_without:archivo', 'string', 'max:4096'],
-            'archivo' => ['nullable', 'file', 'max:102400'],
+            'archivo' => ['nullable', 'file', 'max:16384', 'mimetypes:image/jpeg,image/png,audio/aac,audio/mp4,audio/mpeg,audio/amr,audio/ogg,video/mp4,video/3gpp,text/plain,application/pdf,application/msword,application/vnd.ms-excel,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.openxmlformats-officedocument.presentationml.presentation'],
         ]);
 
         $mensaje = $request->hasFile('archivo')
