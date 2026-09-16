@@ -9,6 +9,9 @@ use App\Models\Producto;
 use App\Models\Proforma;
 use App\Models\Proveedor;
 use App\Models\Venta;
+use App\Services\StockService;
+use Illuminate\Support\Facades\DB;
+use InvalidArgumentException;
 
 class PapeleraController extends Controller
 {
@@ -66,13 +69,82 @@ class PapeleraController extends Controller
         ]);
     }
 
-    public function restaurar(string $modelo, int $id)
+    public function restaurar(string $modelo, int $id, StockService $stock)
     {
         $clase = $this->clase($modelo);
         $registro = $clase::onlyTrashed()->findOrFail($id);
+
+        if ($registro instanceof Venta) {
+            return $this->restaurarVenta($registro, $stock);
+        }
+        if ($registro instanceof Compra) {
+            return $this->restaurarCompra($registro, $stock);
+        }
+
         $registro->restore();
 
-        return back()->with('exito', $this->titulo($registro).' restaurado. Revisa el stock si era un documento.');
+        return back()->with('exito', $this->titulo($registro).' restaurado.');
+    }
+
+    /**
+     * Restaurar una venta revierte lo que hizo el eliminado:
+     * vuelve a descontar stock y restaura su comprobante.
+     */
+    protected function restaurarVenta(Venta $venta, StockService $stock)
+    {
+        try {
+            DB::transaction(function () use ($venta, $stock) {
+                $venta->load('detalles.producto');
+                if ($venta->estado === 'activa' && ! $venta->origen_siat) {
+                    $ids = $venta->detalles->map(fn ($det) => $det->producto_id)->filter()->all();
+                    $bloqueados = Producto::whereIn('id', $ids)->lockForUpdate()->get()->keyBy('id');
+                    foreach ($venta->detalles as $det) {
+                        if (! $det->producto_id) {
+                            continue;
+                        }
+                        $disponible = (float) ($bloqueados[$det->producto_id]->stock ?? 0);
+                        if ($disponible < (float) $det->cantidad) {
+                            throw new InvalidArgumentException(
+                                "No se puede restaurar {$venta->numero}: stock insuficiente para {$det->codigo_producto} (disp. {$disponible}, req. {$det->cantidad})."
+                            );
+                        }
+                    }
+                    foreach ($venta->detalles as $det) {
+                        if ($det->producto_id) {
+                            $stock->disminuirStock($det->producto, (float) $det->cantidad);
+                        }
+                    }
+                }
+                $venta->restore();
+                Comprobante::onlyTrashed()->where('origen_venta_id', $venta->id)->restore();
+            });
+        } catch (InvalidArgumentException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        return back()->with('exito', $venta->numero.' restaurada con stock y comprobante.');
+    }
+
+    /**
+     * Restaurar una compra revierte lo que hizo el eliminado:
+     * vuelve a sumar stock y restaura su comprobante.
+     */
+    protected function restaurarCompra(Compra $compra, StockService $stock)
+    {
+        DB::transaction(function () use ($compra, $stock) {
+            $compra->load('detalles.producto');
+            if (! $compra->origen_siat) {
+                foreach ($compra->detalles as $det) {
+                    if ($det->producto_id) {
+                        $stock->aumentarStock($det->producto, (float) $det->cantidad);
+                    }
+                }
+            }
+            $compra->restore();
+            Comprobante::onlyTrashed()->where('origen_compra_id', $compra->id)->restore();
+        });
+
+        return back()->with('exito', $compra->numero.' restaurada con stock y comprobante.');
     }
 
     public function eliminar(string $modelo, int $id)
