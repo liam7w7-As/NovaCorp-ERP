@@ -1,0 +1,962 @@
+<?php
+
+namespace App\Services;
+
+use App\Models\Configuracion;
+use App\Models\EventoSiat;
+use App\Models\PuntoVenta;
+use SoapClient;
+use Throwable;
+
+/**
+ * Comunicación con los servicios SOAP del SIN (Facturación en Línea).
+ *
+ * MODOS:
+ * - simulador (por defecto): no toca la red; devuelve respuestas deterministas
+ *   con prefijo SIM- y audita cada llamada en eventos_siat. Sirve para probar
+ *   todo el flujo (CUIS → CUFD → recepción → anulación) sin credenciales.
+ * - real: consume los WSDL oficiales con Token Delegado + certificado .p12.
+ *   Requiere NIT, código de sistema, token, CUIS/CUFD vigentes y certificado.
+ *
+ * Endpoints (RND 102100000011):
+ * - Pruebas:    https://pilotosiatservicios.impuestos.gob.bo/v2/{Servicio}?wsdl
+ * - Producción: https://siatrest.impuestos.gob.bo/v2/{Servicio}?wsdl
+ */
+class SiatService
+{
+    protected function baseUrl(): string
+    {
+        return SiatConfig::get('siat_ambiente') === 'produccion'
+            ? 'https://siatrest.impuestos.gob.bo/v2'
+            : 'https://pilotosiatservicios.impuestos.gob.bo/v2';
+    }
+
+    protected function cliente(string $servicio): SoapClient
+    {
+        return new SoapClient($this->baseUrl().'/'.$servicio.'?wsdl', [
+            'trace' => true,
+            'exceptions' => true,
+            'connection_timeout' => 25,
+            'cache_wsdl' => WSDL_CACHE_NONE,
+        ]);
+    }
+
+    protected function auditar(string $metodo, $parametros, $respuesta, bool $exitoso): void
+    {
+        try {
+            EventoSiat::registrar($metodo, $parametros, $respuesta, $exitoso);
+        } catch (Throwable) {
+            // La auditoría nunca debe romper el flujo fiscal
+        }
+    }
+
+    // ---------------- CUIS ----------------
+
+    public function solicitarCuis(int $codigoSucursal = 0, int $codigoPuntoVenta = 0, ?int $puntoVentaId = null): array
+    {
+        $params = [
+            'codigoAmbiente' => SiatConfig::codigoAmbienteSin(),
+            'codigoModalidad' => SiatConfig::codigoModalidadSin(),
+            'codigoSistema' => (string) SiatConfig::get('siat_codigo_sistema'),
+            'nit' => (int) SiatConfig::get('siat_nit'),
+            'codigoSucursal' => $codigoSucursal,
+            'codigoPuntoVenta' => $codigoPuntoVenta,
+        ];
+
+        if (SiatConfig::esSimulador()) {
+            $cuis = 'SIM-CUIS-'.strtoupper(substr(md5(json_encode($params).microtime()), 0, 12));
+            if ($codigoSucursal === 0 && $codigoPuntoVenta === 0) {
+                Configuracion::set('siat_cuis', $cuis, 'text');
+            }
+            if ($puntoVentaId && ($pv = PuntoVenta::find($puntoVentaId))) {
+                $pv->update([
+                    'cuis' => $cuis,
+                    'cuis_vigencia' => now()->addYear(),
+                ]);
+            }
+            $res = ['transaccion' => true, 'cuis' => $cuis, 'codigoDescripcion' => 'SIMULADOR: CUIS generado localmente', 'simulado' => true];
+            $this->auditar('solicitudCuis', $params + ['_modo' => 'simulador'], $res, true);
+
+            return $res;
+        }
+
+        try {
+            $token = SiatConfig::secreto('siat_token');
+            if (! $token) {
+                throw new \RuntimeException('Falta el Token Delegado en la configuración SIAT.');
+            }
+            $client = $this->cliente('FacturacionCodigos');
+            $resp = $client->__soapCall('solicitudCuis', [[
+                'SolicitudCuis' => $params + ['apiKey' => 'TokenApi '.$token],
+            ]]);
+            $ok = (bool) ($resp->RespuestaCuis->transaccion ?? false);
+            $res = [
+                'transaccion' => $ok,
+                'cuis' => $resp->RespuestaCuis->codigo ?? null,
+                'codigoDescripcion' => $resp->RespuestaCuis->mensajesList[0]->descripcion ?? '',
+            ];
+            if ($ok && $res['cuis']) {
+                if ($codigoSucursal === 0 && $codigoPuntoVenta === 0) {
+                    Configuracion::set('siat_cuis', $res['cuis'], 'text');
+                }
+                if ($puntoVentaId && ($pv = PuntoVenta::find($puntoVentaId))) {
+                    $pv->update([
+                        'cuis' => $res['cuis'],
+                        'cuis_vigencia' => now()->addYear(),
+                    ]);
+                }
+            }
+            $this->auditar('solicitudCuis', $params, json_encode($resp, JSON_PARTIAL_OUTPUT_ON_ERROR), $ok);
+
+            return $res;
+        } catch (Throwable $e) {
+            $this->auditar('solicitudCuis', $params, $e->getMessage(), false);
+            throw $e;
+        }
+    }
+
+    // ---------------- CUFD ----------------
+
+    public function solicitarCufd(int $codigoSucursal = 0, int $codigoPuntoVenta = 0, ?string $cuis = null, ?int $puntoVentaId = null): array
+    {
+        $cuis ??= ($puntoVentaId ? PuntoVenta::find($puntoVentaId)?->cuis : null)
+            ?: (string) SiatConfig::get('siat_cuis');
+
+        $params = [
+            'codigoAmbiente' => SiatConfig::codigoAmbienteSin(),
+            'codigoModalidad' => SiatConfig::codigoModalidadSin(),
+            'codigoSistema' => (string) SiatConfig::get('siat_codigo_sistema'),
+            'nit' => (int) SiatConfig::get('siat_nit'),
+            'codigoSucursal' => $codigoSucursal,
+            'codigoPuntoVenta' => $codigoPuntoVenta,
+            'cuis' => (string) $cuis,
+        ];
+
+        if (SiatConfig::esSimulador()) {
+            if (! $cuis) {
+                throw new \RuntimeException('Solicita primero el CUIS para esta sucursal/punto de venta.');
+            }
+            $cufd = 'SIM-CUFD-'.strtoupper(substr(md5($cuis.microtime()), 0, 16));
+            $vigencia = now()->addDay()->format('Y-m-d\TH:i:s.v');
+            if ($codigoSucursal === 0 && $codigoPuntoVenta === 0) {
+                Configuracion::set('siat_cufd', $cufd, 'text');
+                Configuracion::set('siat_cufd_vigencia', $vigencia, 'text');
+            }
+            if ($puntoVentaId && ($pv = PuntoVenta::find($puntoVentaId))) {
+                $pv->update([
+                    'cufd' => $cufd,
+                    'codigo_control' => 'SIM-CTRL',
+                    'cufd_vigencia' => now()->addDay(),
+                ]);
+            }
+            $res = ['transaccion' => true, 'cufd' => $cufd, 'codigoControl' => 'SIM-CTRL', 'fechaVigencia' => $vigencia,
+                'codigoDescripcion' => 'SIMULADOR: CUFD generado localmente', 'simulado' => true];
+            $this->auditar('solicitudCufd', $params + ['_modo' => 'simulador'], $res, true);
+
+            return $res;
+        }
+
+        try {
+            $token = SiatConfig::secreto('siat_token');
+            if (! $token || ! $cuis) {
+                throw new \RuntimeException('Faltan Token Delegado o CUIS vigente.');
+            }
+            $client = $this->cliente('FacturacionCodigos');
+            $resp = $client->__soapCall('solicitudCufd', [[
+                'SolicitudCufd' => $params + ['apiKey' => 'TokenApi '.$token],
+            ]]);
+            $ok = (bool) ($resp->RespuestaCufd->transaccion ?? false);
+            $res = [
+                'transaccion' => $ok,
+                'cufd' => $resp->RespuestaCufd->codigo ?? null,
+                'codigoControl' => $resp->RespuestaCufd->codigoControl ?? null,
+                'fechaVigencia' => $resp->RespuestaCufd->fechaVigencia ?? null,
+                'codigoDescripcion' => $resp->RespuestaCufd->mensajesList[0]->descripcion ?? '',
+            ];
+            if ($ok && $res['cufd']) {
+                if ($codigoSucursal === 0 && $codigoPuntoVenta === 0) {
+                    Configuracion::set('siat_cufd', $res['cufd'], 'text');
+                    Configuracion::set('siat_cufd_vigencia', (string) $res['fechaVigencia'], 'text');
+                }
+                if ($puntoVentaId && ($pv = PuntoVenta::find($puntoVentaId))) {
+                    $pv->update([
+                        'cufd' => $res['cufd'],
+                        'codigo_control' => $res['codigoControl'] ?? null,
+                        'cufd_vigencia' => $res['fechaVigencia'] ?? now()->addDay(),
+                    ]);
+                }
+            }
+            $this->auditar('solicitudCufd', $params, json_encode($resp, JSON_PARTIAL_OUTPUT_ON_ERROR), $ok);
+
+            return $res;
+        } catch (Throwable $e) {
+            $this->auditar('solicitudCufd', $params, $e->getMessage(), false);
+            throw $e;
+        }
+    }
+
+    // ---------------- CUF ----------------
+
+    /**
+     * CUF según Anexo Técnico SIN: cadena decimal + dígito módulo 11, luego a hexadecimal.
+     * Campos: NIT(13) + fechaHora(17) + sucursal + modalidad + emisión + tipoFactura + docSector + número + puntoVenta.
+     */
+    public function generarCuf(
+        string $nit,
+        string $fechaHora, // YmdHis + milisegundos (17 dígitos)
+        string $sucursal,
+        int $modalidad,
+        int $emision, // 1 en línea
+        int $tipoFactura, // 1 con derecho a crédito fiscal
+        int $docSector, // 1 factura compra-venta
+        string $numeroFactura,
+        string $puntoVenta,
+    ): string {
+        if (SiatConfig::esSimulador()) {
+            $semilla = implode('|', func_get_args());
+            $hash = strtoupper(sha1($semilla.microtime()));
+            $cuf = 'SIM'.substr($hash, 0, 37);
+            $this->auditar('generarCuf', ['_modo' => 'simulador'] + compact('nit', 'numeroFactura'), ['cuf' => $cuf], true);
+
+            return $cuf;
+        }
+
+        $cadena = str_pad($nit, 13, '0', STR_PAD_LEFT)
+            .$fechaHora
+           .$sucursal
+            .$modalidad
+            .$emision
+            .$tipoFactura
+            .$docSector
+            .$numeroFactura
+            .$puntoVenta;
+
+        $digito = self::modulo11($cadena);
+        $cuf = self::decimalAHex($cadena.$digito);
+        $this->auditar('generarCuf', compact('nit', 'numeroFactura'), ['cuf' => $cuf], true);
+
+        return $cuf;
+    }
+
+    public static function modulo11(string $cadena): int
+    {
+        $suma = 0;
+        $factor = 2;
+        for ($i = strlen($cadena) - 1; $i >= 0; $i--) {
+            $suma += ((int) $cadena[$i]) * $factor;
+            $factor = $factor === 9 ? 2 : $factor + 1;
+        }
+        $resto = $suma % 11;
+        if ($resto === 0) {
+            return 0;
+        }
+        if ($resto === 1) {
+            return 1; // criterio SIN para este caso
+        }
+
+        return 11 - $resto;
+    }
+
+    public static function decimalAHex(string $decimal): string
+    {
+        $decimal = ltrim($decimal, '0');
+        if ($decimal === '') {
+            return '0';
+        }
+        $hex = '';
+        while (bccomp($decimal, '0') > 0) {
+            $resto = (int) bcmod($decimal, '16');
+            $hex = dechex($resto).$hex;
+            $decimal = bcdiv($decimal, '16', 0);
+        }
+
+        return strtoupper($hex);
+    }
+
+    // ---------------- Firma XML ----------------
+
+    /**
+     * Firma enveloped XMLDSig (RSA-SHA256) con el .p12.
+     * Sólo requerida en modalidad Electrónica; en Computarizada devuelve el XML sin firmar.
+     * En simulador incrusta un marcador sin criptografía.
+     */
+    public function firmarXml(string $xml, ?string $p12Absoluto = null, ?string $password = null): string
+    {
+        // Computarizada en Línea no usa firma digital
+        if (SiatConfig::esComputarizada()) {
+            $this->auditar('firmarXml', ['_modalidad' => 'computarizada', 'bytes' => strlen($xml)], ['omitida' => true], true);
+
+            return $xml;
+        }
+
+        $etiquetaCierre = '</'.SiatConfig::etiquetaRaizXml().'>';
+
+        if (SiatConfig::esSimulador()) {
+            $marcado = preg_replace(
+                '/'.preg_quote($etiquetaCierre, '/').'/u',
+                '<firmaDigital><modo>SIMULADOR</modo><fecha>'.now()->toIso8601String().'</fecha></firmaDigital>'.$etiquetaCierre,
+                $xml, 1
+            );
+            $this->auditar('firmarXml', ['_modo' => 'simulador', 'bytes' => strlen($xml)], ['bytes' => strlen($marcado ?? $xml)], true);
+
+            return $marcado ?? $xml;
+        }
+
+        $p12Absoluto ??= $this->rutaCertificado();
+        $password ??= SiatConfig::secreto('siat_cert_password');
+        if (! $p12Absoluto || ! is_file($p12Absoluto)) {
+            throw new \RuntimeException('Certificado digital .p12 no encontrado.');
+        }
+        if (! openssl_pkcs12_read(file_get_contents($p12Absoluto), $certs, (string) $password)) {
+            throw new \RuntimeException('No se pudo leer el .p12 (¿contraseña incorrecta?).');
+        }
+
+        $doc = new \DOMDocument('1.0', 'UTF-8');
+        $doc->loadXML($xml);
+        $canon = $doc->C14N(true, false);
+        $digest = base64_encode(hash('sha256', $canon, true));
+
+        $signedInfo = '<SignedInfo xmlns="http://www.w3.org/2000/09/xmldsig#">'
+            .'<CanonicalizationMethod Algorithm="http://www.w3.org/TR/2001/REC-xml-c14n-20010315"/>'
+            .'<SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"/>'
+            .'<Reference URI=""><Transforms><Transform Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature"/></Transforms>'
+            .'<DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/>'
+            .'<DigestValue>'.$digest.'</DigestValue></Reference></SignedInfo>';
+
+        $ok = openssl_sign($signedInfo, $firma, $certs['pkey'], OPENSSL_ALGO_SHA256);
+        if (! $ok) {
+            throw new \RuntimeException('Falló la firma RSA del XML.');
+        }
+        $x509 = preg_replace('/-----(BEGIN|END) CERTIFICATE-----|\s/', '', $certs['cert']);
+        $signature = '<Signature xmlns="http://www.w3.org/2000/09/xmldsig#">'.$signedInfo
+            .'<SignatureValue>'.base64_encode($firma).'</SignatureValue>'
+            .'<KeyInfo><X509Data><X509Certificate>'.$x509.'</X509Certificate></X509Data></KeyInfo></Signature>';
+
+        $firmado = preg_replace('/'.preg_quote($etiquetaCierre, '/').'/u', $signature.$etiquetaCierre, $xml, 1);
+        $this->auditar('firmarXml', ['bytes' => strlen($xml)], ['bytes' => strlen($firmado ?? $xml)], true);
+
+        return $firmado ?? $xml;
+    }
+
+    protected function rutaCertificado(): ?string
+    {
+        $rel = SiatConfig::get('siat_certificado_path');
+        if (! $rel) {
+            return null;
+        }
+
+        return storage_path('app/public/'.$rel);
+    }
+
+    // ---------------- Recepción de factura ----------------
+
+    public function recepcionFactura(string $xmlFirmado, string $cuf, string $numeroFactura, \DateTimeInterface $fechaEmision, int $emision = 1, ?string $cafc = null): array
+    {
+        $hash = hash('sha256', $xmlFirmado);
+        $params = [
+            'codigoAmbiente' => SiatConfig::codigoAmbienteSin(),
+            'codigoDocumentoSector' => 1,
+            'codigoEmision' => $emision,
+            'codigoModalidad' => SiatConfig::codigoModalidadSin(),
+            'codigoPuntoVenta' => (int) SiatConfig::get('siat_punto_venta', '0'),
+            'codigoSistema' => (string) SiatConfig::get('siat_codigo_sistema'),
+            'codigoSucursal' => (int) SiatConfig::get('siat_sucursal', '0'),
+            'cufd' => $emision === 2 ? null : (string) SiatConfig::get('siat_cufd'),
+            'cuis' => (string) SiatConfig::get('siat_cuis'),
+            'nit' => (int) SiatConfig::get('siat_nit'),
+            'tipoFacturaDocumento' => 1,
+            'archivo' => base64_encode(gzencode($xmlFirmado)),
+            'fechaEnvio' => $fechaEmision->format('Y-m-d\TH:i:s.v'),
+            'hashArchivo' => $hash,
+            'cafc' => $cafc,
+            'codigoControl' => null,
+        ];
+
+        if (SiatConfig::esSimulador()) {
+            $res = [
+                'transaccion' => true,
+                'codigoRecepcion' => 'SIM-R-'.strtoupper(substr(md5($cuf.microtime()), 0, 10)),
+                'codigoDescripcion' => $emision === 2
+                    ? 'SIMULADOR: factura en contingencia recibida (sin valor fiscal)'
+                    : 'SIMULADOR: factura recibida y validada (sin valor fiscal)',
+                'cuf' => $cuf,
+                'numeroFactura' => $numeroFactura,
+                'simulado' => true,
+            ];
+            $this->auditar('recepcionFactura', ['_modo' => 'simulador', 'cuf' => $cuf, 'hash' => $hash, 'emision' => $emision], $res, true);
+
+            return $res;
+        }
+
+        try {
+            $token = SiatConfig::secreto('siat_token');
+            $client = $this->cliente(SiatConfig::servicioFacturacionWsdl());
+            $resp = $client->__soapCall('recepcionFactura', [[
+                'SolicitudServicioRecepcionFactura' => $params + ['apiKey' => 'TokenApi '.$token],
+            ]]);
+            $r = $resp->RespuestaServicioFacturacion ?? null;
+            $ok = (bool) ($r->transaccion ?? false);
+            $res = [
+                'transaccion' => $ok,
+                'codigoRecepcion' => $r->codigoRecepcion ?? null,
+                'codigoDescripcion' => $r->mensajesList[0]->descripcion ?? '',
+                'raw' => json_encode($resp, JSON_PARTIAL_OUTPUT_ON_ERROR),
+            ];
+            $this->auditar('recepcionFactura', ['cuf' => $cuf, 'hash' => $hash], $res, $ok);
+
+            return $res;
+        } catch (Throwable $e) {
+            $this->auditar('recepcionFactura', ['cuf' => $cuf, 'hash' => $hash], $e->getMessage(), false);
+            throw $e;
+        }
+    }
+
+    // ---------------- Anulación ----------------
+
+    public function anulacionFactura(string $cuf, int $codigoMotivo = 1): array
+    {
+        $params = [
+            'codigoAmbiente' => SiatConfig::codigoAmbienteSin(),
+            'codigoDocumentoSector' => 1,
+            'codigoEmision' => 1,
+            'codigoModalidad' => SiatConfig::codigoModalidadSin(),
+            'codigoPuntoVenta' => (int) SiatConfig::get('siat_punto_venta', '0'),
+            'codigoSistema' => (string) SiatConfig::get('siat_codigo_sistema'),
+            'codigoSucursal' => (int) SiatConfig::get('siat_sucursal', '0'),
+            'cufd' => (string) SiatConfig::get('siat_cufd'),
+            'cuis' => (string) SiatConfig::get('siat_cuis'),
+            'nit' => (int) SiatConfig::get('siat_nit'),
+            'tipoFacturaDocumento' => 1,
+            'codigoMotivo' => $codigoMotivo,
+            'cuf' => $cuf,
+        ];
+
+        if (SiatConfig::esSimulador()) {
+            $res = ['transaccion' => true, 'codigoDescripcion' => 'SIMULADOR: factura anulada (sin valor fiscal)', 'simulado' => true];
+            $this->auditar('anulacionFactura', ['_modo' => 'simulador', 'cuf' => $cuf], $res, true);
+
+            return $res;
+        }
+
+        try {
+            $token = SiatConfig::secreto('siat_token');
+            $client = $this->cliente(SiatConfig::servicioFacturacionWsdl());
+            $resp = $client->__soapCall('anulacionFactura', [[
+                'SolicitudServicioAnulacionFactura' => $params + ['apiKey' => 'TokenApi '.$token],
+            ]]);
+            $r = $resp->RespuestaServicioFacturacion ?? null;
+            $ok = (bool) ($r->transaccion ?? false);
+            $res = [
+                'transaccion' => $ok,
+                'codigoDescripcion' => $r->mensajesList[0]->descripcion ?? '',
+                'raw' => json_encode($resp, JSON_PARTIAL_OUTPUT_ON_ERROR),
+            ];
+            $this->auditar('anulacionFactura', ['cuf' => $cuf], $res, $ok);
+
+            return $res;
+        } catch (Throwable $e) {
+            $this->auditar('anulacionFactura', ['cuf' => $cuf], $e->getMessage(), false);
+            throw $e;
+        }
+    }
+
+    // ---------------- Notas débito/crédito ----------------
+
+    /**
+     * Registra una nota de débito o crédito asociada a una factura.
+     * En modo real usa el servicio de notas del SIN; en simulador, respuesta local.
+     */
+    public function recepcionNota(string $cufOrigen, string $tipo, float $monto, string $motivo): array
+    {
+        $params = [
+            'cufOrigen' => $cufOrigen,
+            'tipo' => $tipo,
+            'monto' => $monto,
+            'motivo' => $motivo,
+            'codigoAmbiente' => SiatConfig::codigoAmbienteSin(),
+            'codigoSistema' => (string) SiatConfig::get('siat_codigo_sistema'),
+            'nit' => (int) SiatConfig::get('siat_nit'),
+        ];
+
+        if (SiatConfig::esSimulador()) {
+            $res = [
+                'transaccion' => true,
+                'codigoRecepcion' => 'SIM-N-'.strtoupper(substr(md5($cufOrigen.$tipo.microtime()), 0, 10)),
+                'cuf' => 'SIMN'.strtoupper(substr(sha1($cufOrigen.microtime()), 0, 36)),
+                'codigoDescripcion' => 'SIMULADOR: nota registrada (sin valor fiscal)',
+                'simulado' => true,
+            ];
+            $this->auditar('recepcionNota', ['_modo' => 'simulador'] + $params, $res, true);
+
+            return $res;
+        }
+
+        try {
+            $token = SiatConfig::secreto('siat_token');
+            $client = $this->cliente(SiatConfig::servicioFacturacionWsdl());
+            $resp = $client->__soapCall('recepcionNotaFiscal', [[
+                'SolicitudServicioRecepcionNota' => $params + ['apiKey' => 'TokenApi '.$token],
+            ]]);
+            $r = $resp->RespuestaServicioFacturacion ?? null;
+            $ok = (bool) ($r->transaccion ?? false);
+            $res = [
+                'transaccion' => $ok,
+                'codigoRecepcion' => $r->codigoRecepcion ?? null,
+                'codigoDescripcion' => $r->mensajesList[0]->descripcion ?? '',
+                'raw' => json_encode($resp, JSON_PARTIAL_OUTPUT_ON_ERROR),
+            ];
+            $this->auditar('recepcionNota', ['cufOrigen' => $cufOrigen, 'tipo' => $tipo], $res, $ok);
+
+            return $res;
+        } catch (Throwable $e) {
+            $this->auditar('recepcionNota', ['cufOrigen' => $cufOrigen, 'tipo' => $tipo], $e->getMessage(), false);
+            throw $e;
+        }
+    }
+
+    // ---------------- Catálogos de sincronización ----------------
+
+    /**
+     * Lista oficial de leyendas del periodo (FacturacionSincronizacion).
+     * En simulador devuelve una lista de ejemplo.
+     */
+    public function sincronizarLeyendas(): array
+    {
+        if (SiatConfig::esSimulador()) {
+            $res = [
+                'transaccion' => true,
+                'leyendas' => [
+                    'Ley N° 453: Tienes derecho a recibir información sobre las características y contenidos de los productos.',
+                    'Ley N° 453: El proveedor deberá entregar el producto en las condiciones pactadas.',
+                    'Ley N° 453: Tienes derecho a reclamar si el producto no cumple lo ofertado.',
+                ],
+                'simulado' => true,
+            ];
+            $this->auditar('sincronizarLeyendas', ['_modo' => 'simulador'], $res, true);
+
+            return $res;
+        }
+
+        try {
+            $token = SiatConfig::secreto('siat_token');
+            $client = $this->cliente('FacturacionSincronizacion');
+            $resp = $client->__soapCall('sincronizarParametricaLeyendas', [[
+                'SolicitudSincronizacion' => [
+                    'codigoAmbiente' => SiatConfig::codigoAmbienteSin(),
+                    'codigoSistema' => (string) SiatConfig::get('siat_codigo_sistema'),
+                    'nit' => (int) SiatConfig::get('siat_nit'),
+                    'apiKey' => 'TokenApi '.$token,
+                ],
+            ]]);
+            $lista = $resp->RespuestaListaParametricas->listaCodigos ?? [];
+            $leyendas = [];
+            foreach ((array) $lista as $item) {
+                if (! empty($item->descripcion)) {
+                    $leyendas[] = (string) $item->descripcion;
+                }
+            }
+            $res = ['transaccion' => true, 'leyendas' => $leyendas];
+            $this->auditar('sincronizarLeyendas', [], ['total' => count($leyendas)], true);
+
+            return $res;
+        } catch (Throwable $e) {
+            $this->auditar('sincronizarLeyendas', [], $e->getMessage(), false);
+            throw $e;
+        }
+    }
+
+    /**
+     * Sincroniza un catálogo paramétrico completo (actividades, productos,
+     * documentos, pagos, motivos, eventos, leyendas, unidades). En simulador usa datos de ejemplo;
+     * en real consume FacturacionSincronizacion. Retorna [codigo => descripcion].
+     */
+    public function sincronizarCatalogo(string $tipo, int $codigoSucursal = 0, int $codigoPuntoVenta = 0): array
+    {
+        if (SiatConfig::esSimulador()) {
+            $items = self::catalogoEjemplo($tipo);
+            $res = ['transaccion' => true, 'items' => $items, 'simulado' => true];
+            $this->auditar('sincronizarCatalogo', ['_modo' => 'simulador', 'tipo' => $tipo], ['total' => count($items)], true);
+
+            return $res;
+        }
+
+        $metodos = [
+            'actividad' => 'sincronizarActividades',
+            'producto' => 'sincronizarListaProductosServicios',
+            'documento' => 'sincronizarParametricaTipoDocumentoIdentidad',
+            'pago' => 'sincronizarParametricaTipoMetodoPago',
+            'motivo' => 'sincronizarParametricaMotivoAnulacion',
+            'evento' => 'sincronizarParametricaEventosSignificativos',
+            'leyenda' => 'sincronizarListaLeyendasFactura',
+            'unidad' => 'sincronizarParametricaUnidadMedida',
+        ];
+        if (! isset($metodos[$tipo])) {
+            throw new \InvalidArgumentException("Catálogo {$tipo} no soportado.");
+        }
+
+        try {
+            $token = SiatConfig::secreto('siat_token');
+            $cuis = (string) (SiatConfig::get('siat_cuis') ?: '');
+            $client = $this->cliente('FacturacionSincronizacion');
+
+            $solicitud = [
+                'codigoAmbiente' => SiatConfig::codigoAmbienteSin(),
+                'codigoSistema' => (string) SiatConfig::get('siat_codigo_sistema'),
+                'nit' => (int) SiatConfig::get('siat_nit'),
+                'codigoSucursal' => $codigoSucursal,
+                'codigoPuntoVenta' => $codigoPuntoVenta,
+                'cuis' => $cuis,
+                'apiKey' => 'TokenApi '.$token,
+            ];
+
+            $resp = $client->__soapCall($metodos[$tipo], [[
+                'SolicitudSincronizacion' => $solicitud,
+            ]]);
+
+            $items = [];
+            $respuesta = $resp->RespuestaListaParametricas
+                ?? $resp->RespuestaListaActividades
+                ?? $resp->RespuestaListaProductos
+                ?? $resp->RespuestaListaLeyendas
+                ?? $resp;
+
+            $lista = $respuesta->listaCodigos
+                ?? $respuesta->listaActividades
+                ?? $respuesta->listaLeyendas
+                ?? $respuesta->listaProductos
+                ?? [];
+
+            foreach ((array) $lista as $item) {
+                $codigo = (string) (
+                    $item->codigo
+                    ?? $item->codigoClasificador
+                    ?? $item->codigoProducto
+                    ?? $item->codigoCaeb
+                    ?? $item->codigoLeyenda
+                    ?? ''
+                );
+                $desc = (string) (
+                    $item->descripcion
+                    ?? $item->descripcionProducto
+                    ?? $item->descripcionLeyenda
+                    ?? ''
+                );
+                if ($codigo !== '' && $desc !== '') {
+                    $items[$codigo] = $desc;
+                }
+            }
+            $this->auditar('sincronizarCatalogo', ['tipo' => $tipo], ['total' => count($items)], true);
+
+            return ['transaccion' => true, 'items' => $items];
+        } catch (Throwable $e) {
+            $this->auditar('sincronizarCatalogo', ['tipo' => $tipo], $e->getMessage(), false);
+            throw $e;
+        }
+    }
+
+    /**
+     * Datos oficiales de ejemplo para modo simulador (subconjunto realista oficial SIN Bolivia).
+     */
+    public static function catalogoEjemplo(string $tipo): array
+    {
+        return match ($tipo) {
+            'actividad' => [
+                '474100' => 'Venta al por menor de repuestos para vehículos automotores',
+                '453000' => 'Venta de partes, piezas y accesorios para vehículos automotores',
+                '471100' => 'Venta al por menor en comercios no especializados',
+                '475200' => 'Venta al por menor de artículos de ferretería, pinturas y productos de vidrio',
+                '465900' => 'Venta al por mayor de otra maquinaria y equipo',
+            ],
+            'producto' => [
+                '99100' => 'Productos no especificados / servicios varios',
+                '32110' => 'Filtros de aceite y combustible para motores',
+                '27110' => 'Aceites lubricantes y grasas para motores',
+                '38110' => 'Neumáticos, llantas y cámaras de caucho',
+                '42120' => 'Baterías y acumuladores eléctricos',
+                '43210' => 'Herramientas manuales de uso mecánico y ferretería',
+                '44110' => 'Pinturas, esmaltes, barnices y disolventes',
+                '45200' => 'Pastillas, zapatas y discos de freno',
+                '46100' => 'Repuestos y componentes eléctricos para automotores',
+                '51100' => 'Tornillos, tuercas, pernos y remaches metálicos',
+                '52300' => 'Cables, alambres y conductores eléctricos',
+                '62010' => 'Servicios de mantenimiento y reparación automotriz/industrial',
+            ],
+            'documento' => [
+                '1' => 'Cédula de identidad (CI)',
+                '2' => 'Cédula de identidad de extranjero (CEX)',
+                '3' => 'Pasaporte',
+                '4' => 'Otro documento de identidad',
+                '5' => 'Número de Identificación Tributaria (NIT)',
+            ],
+            'pago' => [
+                '1' => 'Efectivo',
+                '2' => 'Tarjeta de débito/crédito',
+                '3' => 'Cheque',
+                '4' => 'Vales / Cupones',
+                '5' => 'Otros (Transferencia bancaria / QR)',
+                '6' => 'Pago posterior (Crédito)',
+            ],
+            'motivo' => [
+                '1' => 'Factura mal emitida',
+                '2' => 'Datos de emisión incorrectos',
+                '3' => 'Devolución total o parcial',
+                '4' => 'Desistimiento de la operación',
+            ],
+            'evento' => [
+                '1' => 'Corte del servicio de internet',
+                '2' => 'Inaccesibilidad al servicio web de la AT (SIN)',
+                '3' => 'Corte del suministro de energía eléctrica',
+                '4' => 'Falla del sistema informático de facturación',
+                '5' => 'Virus informático o ataque bloqueante',
+                '6' => 'Cambio de infraestructura o mantenimiento',
+                '7' => 'Otro evento significativo autorizado',
+            ],
+            'leyenda' => [
+                '1' => 'Ley N° 453: Tienes derecho a recibir un trato equitativo y no discriminatorio en el comercio.',
+                '2' => 'Ley N° 453: Tienes derecho a recibir información sobre las características y contenidos de los productos.',
+                '3' => 'Ley N° 453: Los productos deben reunir las condiciones de inocuidad y calidad para su consumo o uso.',
+                '4' => 'Ley N° 453: El proveedor debe responder por el saneamiento de evicción y los vicios ocultos de los bienes.',
+                '5' => 'Este documento es la representación gráfica de un Documento Fiscal Digital emitido en una modalidad de facturación en línea.',
+            ],
+            'unidad' => [
+                '58' => 'UNIDAD (SERVICIOS)',
+                '1' => 'BOBINAS',
+                '2' => 'BALDE',
+                '3' => 'BARRILES',
+                '4' => 'BOLSA',
+                '5' => 'BOTELLAS',
+                '6' => 'CAJA',
+                '7' => 'CARTON',
+                '10' => 'DOCENA',
+                '18' => 'JUEGO',
+                '22' => 'KILOGRAMO',
+                '23' => 'KILOMETRO',
+                '24' => 'LITRO',
+                '25' => 'METRO',
+                '27' => 'METRO CUADRADO',
+                '28' => 'METRO CUBICO',
+                '31' => 'PAQUETE',
+                '32' => 'PAR',
+                '34' => 'PIEZA',
+                '35' => 'PLIEGO',
+                '40' => 'ROLLO',
+                '47' => 'TAMBOR',
+                '50' => 'TONELADA',
+            ],
+            default => [],
+        };
+    }
+
+    // ---------------- Eventos significativos ----------------
+
+    /**
+     * Registra inicio/fin de evento significativo ante el SIN.
+     * $fase: 'inicio' | 'fin'. Códigos 1-7 según SIN.
+     */
+    public function registrarEvento(int $codigoEvento, string $fase, ?string $fechaHora = null): array
+    {
+        $params = [
+            'codigoAmbiente' => SiatConfig::codigoAmbienteSin(),
+            'codigoSistema' => (string) SiatConfig::get('siat_codigo_sistema'),
+            'nit' => (int) SiatConfig::get('siat_nit'),
+            'codigoSucursal' => (int) SiatConfig::get('siat_sucursal', '0'),
+            'codigoPuntoVenta' => (int) SiatConfig::get('siat_punto_venta', '0'),
+            'cuis' => (string) SiatConfig::get('siat_cuis'),
+            'codigoMotivoEvento' => $codigoEvento,
+            'fechaHoraInicioEvento' => $fase === 'inicio'
+                ? ($fechaHora ?? now()->format('Y-m-d\TH:i:s.v'))
+                : null,
+            'fechaHoraFinEvento' => $fase === 'fin'
+                ? ($fechaHora ?? now()->format('Y-m-d\TH:i:s.v'))
+                : null,
+        ];
+
+        if (SiatConfig::esSimulador()) {
+            $res = [
+                'transaccion' => true,
+                'codigoRecepcionEvento' => 'SIM-EV-'.strtoupper(substr(md5($codigoEvento.$fase.microtime()), 0, 10)),
+                'codigoDescripcion' => "SIMULADOR: {$fase} de evento {$codigoEvento} registrado (sin valor fiscal)",
+                'simulado' => true,
+            ];
+            $this->auditar('registroEventoSignificativo', ['_modo' => 'simulador'] + $params, $res, true);
+
+            return $res;
+        }
+
+        try {
+            $token = SiatConfig::secreto('siat_token');
+            $client = $this->cliente('FacturacionOperaciones');
+            $resp = $client->__soapCall('registroEventoSignificativo', [[
+                'SolicitudEventoSignificativo' => $params + ['apiKey' => 'TokenApi '.$token],
+            ]]);
+            $r = $resp->RespuestaListaEventos ?? $resp;
+            $ok = (bool) ($r->transaccion ?? false);
+            $res = [
+                'transaccion' => $ok,
+                'codigoRecepcionEvento' => $r->codigoRecepcionEvento ?? null,
+                'codigoDescripcion' => $r->mensajesList[0]->descripcion ?? '',
+                'raw' => json_encode($resp, JSON_PARTIAL_OUTPUT_ON_ERROR),
+            ];
+            $this->auditar('registroEventoSignificativo', ['codigoEvento' => $codigoEvento, 'fase' => $fase], $res, $ok);
+
+            return $res;
+        } catch (Throwable $e) {
+            $this->auditar('registroEventoSignificativo', ['codigoEvento' => $codigoEvento, 'fase' => $fase], $e->getMessage(), false);
+            throw $e;
+        }
+    }
+
+    // ---------------- Paquetes de contingencia ----------------
+
+    public function recepcionPaquete(string $tarGzBinario, int $cantidadFacturas): array
+    {
+        $hash = hash('sha256', $tarGzBinario);
+        $params = [
+            'codigoAmbiente' => SiatConfig::codigoAmbienteSin(),
+            'codigoSistema' => (string) SiatConfig::get('siat_codigo_sistema'),
+            'nit' => (int) SiatConfig::get('siat_nit'),
+            'codigoSucursal' => (int) SiatConfig::get('siat_sucursal', '0'),
+            'codigoPuntoVenta' => (int) SiatConfig::get('siat_punto_venta', '0'),
+            'cuis' => (string) SiatConfig::get('siat_cuis'),
+            'cantidadFacturas' => $cantidadFacturas,
+            'hashArchivo' => $hash,
+        ];
+
+        if (SiatConfig::esSimulador()) {
+            $res = [
+                'transaccion' => true,
+                'codigoRecepcion' => 'SIM-PQ-'.strtoupper(substr(md5($hash.microtime()), 0, 10)),
+                'codigoDescripcion' => "SIMULADOR: paquete de {$cantidadFacturas} factura(s) recibido (sin valor fiscal)",
+                'simulado' => true,
+            ];
+            $this->auditar('recepcionPaqueteFactura', ['_modo' => 'simulador', 'cantidad' => $cantidadFacturas, 'hash' => $hash], $res, true);
+
+            return $res;
+        }
+
+        try {
+            $token = SiatConfig::secreto('siat_token');
+            $client = $this->cliente(SiatConfig::servicioFacturacionWsdl());
+            $resp = $client->__soapCall('recepcionPaqueteFactura', [[
+                'SolicitudServicioRecepcionPaquete' => $params + [
+                    'apiKey' => 'TokenApi '.$token,
+                    'archivo' => base64_encode($tarGzBinario),
+                ],
+            ]]);
+            $r = $resp->RespuestaServicioFacturacion ?? null;
+            $ok = (bool) ($r->transaccion ?? false);
+            $res = [
+                'transaccion' => $ok,
+                'codigoRecepcion' => $r->codigoRecepcion ?? null,
+                'codigoDescripcion' => $r->mensajesList[0]->descripcion ?? '',
+                'raw' => json_encode($resp, JSON_PARTIAL_OUTPUT_ON_ERROR),
+            ];
+            $this->auditar('recepcionPaqueteFactura', ['cantidad' => $cantidadFacturas, 'hash' => $hash], $res, $ok);
+
+            return $res;
+        } catch (Throwable $e) {
+            $this->auditar('recepcionPaqueteFactura', ['cantidad' => $cantidadFacturas, 'hash' => $hash], $e->getMessage(), false);
+            throw $e;
+        }
+    }
+
+    public function validarPaquete(string $codigoRecepcion): array
+    {
+        if (SiatConfig::esSimulador()) {
+            $res = [
+                'transaccion' => true,
+                'estado' => 'VALIDADO',
+                'codigoDescripcion' => 'SIMULADOR: paquete validado (sin valor fiscal)',
+                'simulado' => true,
+            ];
+            $this->auditar('validacionRecepcionPaquete', ['_modo' => 'simulador', 'codigoRecepcion' => $codigoRecepcion], $res, true);
+
+            return $res;
+        }
+
+        try {
+            $token = SiatConfig::secreto('siat_token');
+            $client = $this->cliente(SiatConfig::servicioFacturacionWsdl());
+            $resp = $client->__soapCall('validacionRecepcionPaqueteFactura', [[
+                'SolicitudServicioValidacionPaquete' => [
+                    'codigoAmbiente' => SiatConfig::codigoAmbienteSin(),
+                    'codigoSistema' => (string) SiatConfig::get('siat_codigo_sistema'),
+                    'nit' => (int) SiatConfig::get('siat_nit'),
+                    'codigoRecepcion' => $codigoRecepcion,
+                    'apiKey' => 'TokenApi '.$token,
+                ],
+            ]]);
+            $r = $resp->RespuestaServicioFacturacion ?? null;
+            $ok = (bool) ($r->transaccion ?? false);
+            $res = [
+                'transaccion' => $ok,
+                'codigoDescripcion' => $r->mensajesList[0]->descripcion ?? '',
+                'raw' => json_encode($resp, JSON_PARTIAL_OUTPUT_ON_ERROR),
+            ];
+            $this->auditar('validacionRecepcionPaquete', ['codigoRecepcion' => $codigoRecepcion], $res, $ok);
+
+            return $res;
+        } catch (Throwable $e) {
+            $this->auditar('validacionRecepcionPaquete', ['codigoRecepcion' => $codigoRecepcion], $e->getMessage(), false);
+            throw $e;
+        }
+    }
+
+    /**
+     * Revierte una anulación dentro del plazo permitido por el SIN.
+     */
+    public function reversionAnulacion(string $cuf): array
+    {
+        $params = [
+            'codigoAmbiente' => SiatConfig::codigoAmbienteSin(),
+            'codigoDocumentoSector' => 1,
+            'codigoSistema' => (string) SiatConfig::get('siat_codigo_sistema'),
+            'nit' => (int) SiatConfig::get('siat_nit'),
+            'cuf' => $cuf,
+        ];
+
+        if (SiatConfig::esSimulador()) {
+            $res = ['transaccion' => true, 'codigoDescripcion' => 'SIMULADOR: anulación revertida (sin valor fiscal)', 'simulado' => true];
+            $this->auditar('reversionAnulacionFactura', ['_modo' => 'simulador', 'cuf' => $cuf], $res, true);
+
+            return $res;
+        }
+
+        try {
+            $token = SiatConfig::secreto('siat_token');
+            $client = $this->cliente(SiatConfig::servicioFacturacionWsdl());
+            $resp = $client->__soapCall('reversionAnulacionFactura', [[
+                'SolicitudServicioReversionAnulacion' => $params + ['apiKey' => 'TokenApi '.$token],
+            ]]);
+            $r = $resp->RespuestaServicioFacturacion ?? null;
+            $ok = (bool) ($r->transaccion ?? false);
+            $res = [
+                'transaccion' => $ok,
+                'codigoDescripcion' => $r->mensajesList[0]->descripcion ?? '',
+                'raw' => json_encode($resp, JSON_PARTIAL_OUTPUT_ON_ERROR),
+            ];
+            $this->auditar('reversionAnulacionFactura', ['cuf' => $cuf], $res, $ok);
+
+            return $res;
+        } catch (Throwable $e) {
+            $this->auditar('reversionAnulacionFactura', ['cuf' => $cuf], $e->getMessage(), false);
+            throw $e;
+        }
+    }
+
+    // ---------------- Probar conexión ----------------
+    public function probarConexion(): array
+    {
+        if (SiatConfig::esSimulador()) {
+            return ['ok' => true, 'mensaje' => 'Modo SIMULADOR activo: no se llamó al SIN. Cambia a modo REAL con credenciales para probar la conexión verdadera.'];
+        }
+
+        try {
+            $r = $this->solicitarCuis();
+
+            return ['ok' => (bool) ($r['transaccion'] ?? false), 'mensaje' => $r['codigoDescripcion'] ?? 'Sin respuesta'];
+        } catch (Throwable $e) {
+            return ['ok' => false, 'mensaje' => $e->getMessage()];
+        }
+    }
+}

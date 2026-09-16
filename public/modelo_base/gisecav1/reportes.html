@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="es" data-bs-theme="light">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Reportes - GISECA SRL ERP</title>
+<link rel="stylesheet" href="css/app.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
+<script>
+(function(){
+  const tema = localStorage.getItem('giseca_tema') || 'light';
+  document.documentElement.setAttribute('data-bs-theme', tema);
+})();
+</script>
+</head>
+<body>
+<div id="contenidoPagina" style="display:none;">
+
+      <h6 style="border-bottom:2px solid var(--naranja); display:inline-block; padding-bottom:6px; margin-bottom:16px; font-weight:700;">
+        Reporte de Proformas (datos reales de este navegador)
+      </h6>
+
+      <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:22px;" id="kpiReportes"></div>
+
+      <div class="card-giseca">
+        <h6>Detalle de Proformas</h6>
+        <table class="tabla-giseca">
+          <thead><tr><th>N°</th><th>Cliente</th><th class="text-end">Total</th><th>Estado</th></tr></thead>
+          <tbody id="tbodyReporte"></tbody>
+        </table>
+      </div>
+
+  </div>
+<script src="js/data.js"></script>
+<script src="js/layout.js"></script>
+<script>
+renderLayout('reportes', 'Reportes');
+
+const proformas = DB.proformas();
+const emitidas = proformas.length;
+const convertidas = proformas.filter(p => p.estado === 'CONVERTIDA').length;
+const tasaConversion = emitidas ? Math.round(convertidas/emitidas*100) : 0;
+const valorTotal = proformas.reduce((s,p) => s + p.total, 0);
+
+document.getElementById('kpiReportes').innerHTML = `
+  <div class="kpi azul"><div class="label">Emitidas</div><div class="value">${emitidas}</div></div>
+  <div class="kpi verde"><div class="label">Convertidas</div><div class="value">${convertidas}</div></div>
+  <div class="kpi naranja"><div class="label">Tasa conversión</div><div class="value">${tasaConversion}%</div></div>
+  <div class="kpi gris"><div class="label">Valor cotizado</div><div class="value">Bs ${formatoMoneda(valorTotal)}</div></div>
+`;
+
+document.getElementById('tbodyReporte').innerHTML = proformas.length ? [...proformas].reverse().map(p => `
+  <tr><td><span class="codigo-chip">${p.numero}</span></td><td>${p.clienteNombre}</td>
+      <td class="text-end">Bs ${formatoMoneda(p.total)}</td><td><span class="estado estado-${p.estado.toLowerCase()}">${p.estado}</span></td></tr>
+`).join('') : '<tr><td colspan="4" class="text-muted small">Sin proformas registradas todavía.</td></tr>';
+</script>
+</body>
+</html>

@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="es" data-bs-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Detalle de Proforma - GISECA SRL ERP</title>
+<link rel="stylesheet" href="css/app.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
+<style>
+  .pdf-preview{ background:#fff; border:1px solid var(--borde); border-radius:10px; padding:26px; font-size:12.5px; }
+  .pdf-header{ display:flex; justify-content:space-between; border-bottom:2px solid var(--azul-acero); padding-bottom:12px; margin-bottom:14px; }
+  .qr-real{ width:100px; height:100px; }
+</style>
+<script>
+(function(){
+  const tema = localStorage.getItem('giseca_tema') || 'light';
+  document.documentElement.setAttribute('data-bs-theme', tema);
+})();
+</script>
+</head>
+<body>
+<div id="contenidoPagina" style="display:none;">
+
+      <div class="no-imprimir" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:18px; flex-wrap:wrap; gap:10px;">
+        <span class="estado" id="badgeEstado" style="font-size:12.5px; padding:5px 14px;"></span>
+        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+          <button class="btn-giseca btn-oscuro btn-sm" onclick="window.print()"><i class="bi bi-file-earmark-pdf"></i> Generar PDF (Imprimir)</button>
+          <button class="btn-giseca" id="btnWhatsapp" style="background:#25D366; color:#fff;"><i class="bi bi-whatsapp"></i> Enviar por WhatsApp</button>
+          <button class="btn-giseca btn-outline btn-sm" onclick="cambiarEstado('APROBADA')">Marcar Aprobada</button>
+          <button class="btn-giseca btn-outline btn-sm" onclick="cambiarEstado('RECHAZADA')">Marcar Rechazada</button>
+          <button class="btn-giseca btn-primario btn-sm" id="btnConvertir" onclick="convertirAVenta()"><i class="bi bi-cart-check"></i> Convertir a Venta</button>
+        </div>
+      </div>
+
+      <div class="pdf-preview" id="pdfPreview"></div>
+
+      <div class="modal-giseca" id="modalConvertir">
+        <div class="modal-box">
+          <h6>Convertir a Venta</h6>
+          <p class="text-muted" style="font-size:12.5px;">Se creará la venta, se descontará el stock real y se generará el comprobante de ingreso automáticamente.</p>
+          <div style="margin-bottom:10px;">
+            <label class="form-label-giseca">Tipo de comprobante</label>
+            <select id="convTipo" class="form-control-giseca">
+              <option value="CON_FACTURA">Con factura</option>
+              <option value="SIN_FACTURA">Sin factura</option>
+            </select>
+          </div>
+          <div style="margin-bottom:16px;">
+            <label class="form-label-giseca">Modalidad</label>
+            <select id="convModalidad" class="form-control-giseca">
+              <option value="CONTADO">Contado</option>
+              <option value="CREDITO">Crédito</option>
+            </select>
+          </div>
+          <div style="display:flex; gap:8px;">
+            <button class="btn-giseca btn-primario" onclick="confirmarConversion()">Confirmar Conversión</button>
+            <button class="btn-giseca btn-outline" onclick="document.getElementById('modalConvertir').classList.remove('abierto')">Cancelar</button>
+          </div>
+        </div>
+      </div>
+
+  </div>
+
+<script src="js/data.js"></script>
+<script src="js/layout.js"></script>
+<script>
+renderLayout('proformas', 'Detalle de Proforma');
+
+const params = new URLSearchParams(window.location.search);
+const id = params.get('id');
+const pf = DB.buscarProformaPorId(id);
+
+if (!pf) {
+  document.getElementById('pdfPreview').innerHTML = '<p>Proforma no encontrada. <a href="proformas-listar.html">Volver al listado</a></p>';
+} else {
+  pintar();
+}
+
+function pintar() {
+  document.getElementById('badgeEstado').className = 'estado estado-' + pf.estado.toLowerCase();
+  document.getElementById('badgeEstado').textContent = pf.estado;
+  document.getElementById('btnConvertir').style.display = pf.estado === 'CONVERTIDA' ? 'none' : 'inline-flex';
+
+  const membrete = DB.membretado();
+  const encabezado = membrete
+    ? `<div style="margin-bottom:14px;">${membrete.tipo === 'image'
+        ? `<img src="${membrete.dataUrl}" style="width:100%; border-radius:4px;">`
+        : `<embed src="${membrete.dataUrl}" type="application/pdf" style="width:100%; height:160px;">`}
+       </div>
+       <div style="text-align:right; border-bottom:2px solid var(--azul-acero); padding-bottom:10px; margin-bottom:14px;">
+         <div style="font-weight:800; font-size:16px;">PROFORMA <span class="codigo-chip">${pf.numero}</span></div>
+         <div>Fecha: ${pf.fecha} — Válida hasta: ${pf.validez}</div>
+       </div>`
+    : `<div class="pdf-header">
+        <div>
+          <div style="font-weight:800; font-size:18px; color:var(--azul-acero);">GISECA SRL</div>
+          <div>Av. Nestor Galindo esq. C. Manuel Cespedes Nº4482</div>
+          <div>Tel: 77596739</div>
+          <div>ventas@giseca.com</div>
+        </div>
+        <div style="text-align:right;">
+          <div style="font-weight:800; font-size:16px;">PROFORMA <span class="codigo-chip">${pf.numero}</span></div>
+          <div>Fecha emisión: ${pf.fecha}</div>
+          <div>Válida hasta: ${pf.validez}</div>
+        </div>
+      </div>`;
+
+  const filasProductos = pf.items.map((it,i) => `
+    <tr><td>${i+1}</td><td><span class="codigo-chip">${it.codigo}</span></td>
+        <td>${it.equivalente ? `<span class="codigo-chip equivalente">${it.equivalente}</span>` : '—'}</td>
+        <td>${it.descripcion}</td><td>${it.marca||''}</td><td>${it.unidad}</td>
+        <td class="text-end">${it.cantidad}</td><td class="text-end">${formatoMoneda(it.precio)}</td>
+        <td class="text-end">${formatoMoneda(it.cantidad*it.precio)}</td></tr>
+  `).join('');
+
+  document.getElementById('pdfPreview').innerHTML = `
+    ${encabezado}
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:16px;">
+      <div><strong>Cliente:</strong> ${pf.clienteNombre}</div>
+      <div><strong>Contacto:</strong> ${pf.contacto || '—'}</div>
+      <div><strong>Teléfono:</strong> ${pf.telefono || '—'}</div>
+    </div>
+    <table class="tabla-giseca" style="margin-bottom:14px;">
+      <thead><tr><th>N°</th><th>Código</th><th>Equivalente</th><th>Descripción</th><th>Marca</th><th>Unidad</th>
+                 <th class="text-end">Cant.</th><th class="text-end">P.Unit.</th><th class="text-end">Total</th></tr></thead>
+      <tbody>${filasProductos}</tbody>
+    </table>
+    <div style="display:flex; justify-content:flex-end; margin-bottom:20px;">
+      <div style="width:280px;">
+        <div style="display:flex; justify-content:space-between; padding:3px 0;"><span>Subtotal:</span><span>${formatoMoneda(pf.subtotal)}</span></div>
+        <div style="display:flex; justify-content:space-between; padding:3px 0;"><span>Descuento:</span><span>${formatoMoneda(pf.descuento)}</span></div>
+        <div style="display:flex; justify-content:space-between; padding:6px 0; border-top:2px solid var(--azul-acero); font-weight:800; font-size:16px;">
+          <span>TOTAL:</span><span style="color:var(--naranja-oscuro);">Bs ${formatoMoneda(pf.total)}</span>
+        </div>
+      </div>
+    </div>
+    <div style="font-size:12px; margin-bottom:20px;">
+      <strong>Entrega:</strong> ${pf.entrega||'—'} &nbsp;|&nbsp; <strong>Pago:</strong> ${pf.condPago||'—'} &nbsp;|&nbsp; <strong>Garantía:</strong> ${pf.garantia||'—'}<br>
+      ${pf.obs ? `<strong>Observaciones:</strong> ${pf.obs}<br>` : ''}
+      ${pf.reservaStock ? `<strong style="color:var(--verde);">✓ Stock reservado para esta proforma</strong>` : ''}
+    </div>
+    <div class="no-imprimir" style="display:flex; justify-content:flex-end; gap:20px;">
+      <div style="text-align:center;">
+        <div style="font-size:10px;">Escanear para verificar</div>
+        <img class="qr-real" id="qrVerificacion">
+      </div>
+    </div>
+  `;
+
+  // QR real generado en el navegador (no requiere servidor)
+  const urlVerificacion = window.location.href;
+  document.getElementById('qrVerificacion').src =
+    'https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=' + encodeURIComponent(urlVerificacion);
+
+  // WhatsApp real con datos de la proforma
+  const mensaje = `Estimado cliente, adjuntamos la Proforma N° ${pf.numero} de GISECA SRL por un total de Bs ${formatoMoneda(pf.total)}. Puede revisarla en: ${urlVerificacion}`;
+  document.getElementById('btnWhatsapp').onclick = () => window.open('https://wa.me/?text=' + encodeURIComponent(mensaje), '_blank');
+}
+
+function cambiarEstado(estado) {
+  DB.cambiarEstadoProforma(id, estado);
+  mostrarToast('Estado actualizado a ' + estado, 'exito');
+  location.reload();
+}
+
+function convertirAVenta() {
+  document.getElementById('modalConvertir').classList.add('abierto');
+}
+
+function confirmarConversion() {
+  const tipo = document.getElementById('convTipo').value;
+  const modalidad = document.getElementById('convModalidad').value;
+  const venta = DB.convertirProformaAVenta(id, tipo, modalidad);
+  if (venta) {
+    mostrarToast('Convertida a venta ' + venta.numero + '. Comprobante ' + venta.comprobante + ' generado.', 'exito');
+    setTimeout(() => window.location.href = 'ventas.html', 700);
+  } else {
+    mostrarToast('No se pudo convertir', 'error');
+  }
+}
+</script>
+<div class="watermark-demo no-imprimir">MODO LOCAL — SIN SERVIDOR</div>
+</body>
+</html>

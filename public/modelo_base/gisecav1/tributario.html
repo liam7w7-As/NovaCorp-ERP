@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="es" data-bs-theme="light">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tributario - GISECA SRL ERP</title>
+<link rel="stylesheet" href="css/app.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
+<script>
+(function(){
+  const tema = localStorage.getItem('giseca_tema') || 'light';
+  document.documentElement.setAttribute('data-bs-theme', tema);
+})();
+</script>
+</head>
+<body>
+<div id="contenidoPagina" style="display:none;">
+
+  <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:16px; margin-bottom:20px;" id="kpiTributario"></div>
+
+  <div style="display:grid; grid-template-columns:1fr 1fr; gap:18px;">
+    <div class="card-giseca">
+      <h6 style="margin-top:0;"><i class="bi bi-cart-plus-fill" style="color:var(--gc-primario);"></i> Crédito Fiscal — Compras (SIAT)</h6>
+      <table class="tabla-giseca">
+        <thead><tr><th>Proveedor</th><th>Factura</th><th class="text-end">Base CF</th><th class="text-end">Crédito Fiscal</th></tr></thead>
+        <tbody id="tbodyCredito"></tbody>
+      </table>
+      <div id="sinCredito" style="display:none; text-align:center; color:var(--gc-gris-claro); padding:26px;">
+        <i class="bi bi-bank" style="font-size:26px; display:block; margin-bottom:6px; opacity:.5;"></i>
+        Aún no importaste el Libro de Compras del SIAT. <a href="compras.html">Importarlo →</a>
+      </div>
+    </div>
+
+    <div class="card-giseca">
+      <h6 style="margin-top:0;"><i class="bi bi-cash-coin" style="color:var(--gc-verde);"></i> Débito Fiscal — Ventas (SIAT)</h6>
+      <table class="tabla-giseca">
+        <thead><tr><th>Cliente</th><th>Factura</th><th class="text-end">Base DF</th><th class="text-end">Débito Fiscal</th></tr></thead>
+        <tbody id="tbodyDebito"></tbody>
+      </table>
+      <div id="sinDebito" style="display:none; text-align:center; color:var(--gc-gris-claro); padding:26px;">
+        <i class="bi bi-bank" style="font-size:26px; display:block; margin-bottom:6px; opacity:.5;"></i>
+        Aún no importaste el Libro de Ventas del SIAT. <a href="ventas.html">Importarlo →</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="card-giseca no-imprimir" style="margin-top:18px; font-size:12px; color:var(--gc-gris-claro); text-align:center;">
+    <i class="bi bi-info-circle"></i> Estos montos se calculan de las facturas importadas desde el Libro de Compras/Ventas del SIAT en los módulos Compras y Ventas.
+    No incluyen compras/ventas registradas manualmente sin ese origen (esas no traen datos fiscales oficiales del SIN).
+  </div>
+
+</div>
+
+<script src="js/data.js"></script>
+<script src="js/layout.js"></script>
+<script>
+renderLayout('tributario', 'Módulo Tributario');
+
+const comprasSIAT = DB.compras().filter(c => c.origen === 'SIAT');
+const ventasSIAT = DB.ventas().filter(v => v.origen === 'SIAT' && v.estado === 'ACTIVA');
+const resumen = DB.resumenTributarioSIAT();
+
+document.getElementById('kpiTributario').innerHTML = `
+  <div class="kpi naranja"><div class="label"><i class="bi bi-cart-plus-fill"></i> Crédito fiscal (compras)</div><div class="value">Bs ${formatoMoneda(resumen.creditoFiscal)}</div></div>
+  <div class="kpi verde"><div class="label"><i class="bi bi-cash-coin"></i> Débito fiscal (ventas)</div><div class="value">Bs ${formatoMoneda(resumen.debitoFiscal)}</div></div>
+  <div class="kpi azul"><div class="label"><i class="bi bi-calculator"></i> Saldo ${resumen.saldo >= 0 ? 'por pagar' : 'a favor'}</div><div class="value">Bs ${formatoMoneda(Math.abs(resumen.saldo))}</div></div>
+`;
+
+document.getElementById('tbodyCredito').innerHTML = comprasSIAT.map(c => `
+  <tr>
+    <td>${c.proveedorNombre}</td>
+    <td><span class="codigo-chip">${c.numeroFacturaSIAT}</span></td>
+    <td class="text-end">${formatoMoneda(c.baseCF)}</td>
+    <td class="text-end fw-bold">${formatoMoneda(c.creditoFiscal)}</td>
+  </tr>
+`).join('');
+document.getElementById('sinCredito').style.display = comprasSIAT.length ? 'none' : 'block';
+
+document.getElementById('tbodyDebito').innerHTML = ventasSIAT.map(v => `
+  <tr>
+    <td>${v.clienteNombre}</td>
+    <td><span class="codigo-chip">${v.numeroFacturaSIAT}</span></td>
+    <td class="text-end">${formatoMoneda(v.baseDF)}</td>
+    <td class="text-end fw-bold">${formatoMoneda(v.debitoFiscal)}</td>
+  </tr>
+`).join('');
+document.getElementById('sinDebito').style.display = ventasSIAT.length ? 'none' : 'block';
+</script>
+</body>
+</html>

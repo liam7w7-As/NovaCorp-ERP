@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="es" data-bs-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ventas - GISECA SRL ERP</title>
+<link rel="stylesheet" href="css/app.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
+<style>
+  #resultadosBusquedaVenta{ position:absolute; background:var(--gc-superficie); border:1px solid var(--gc-borde); border-radius:8px; box-shadow:0 10px 30px rgba(0,0,0,.12); width:100%; max-width:500px; max-height:240px; overflow-y:auto; z-index:50; margin-top:4px; }
+  #resultadosBusquedaVenta .item{ padding:9px 14px; cursor:pointer; border-bottom:1px solid var(--gc-borde); font-size:13px; }
+  #resultadosBusquedaVenta .item:hover{ background:var(--gc-primario-suave); }
+  #tablaItemsVenta input{ border:1px solid var(--gc-borde); border-radius:4px; padding:5px 6px; font-size:12.5px; width:100%; background:var(--gc-superficie); color:var(--gc-texto); }
+</style>
+<script>
+(function(){
+  const tema = localStorage.getItem('giseca_tema') || 'light';
+  document.documentElement.setAttribute('data-bs-theme', tema);
+})();
+</script>
+</head>
+<body>
+<div id="contenidoPagina" style="display:none;">
+
+  <div style="display:grid; grid-template-columns:repeat(5,1fr); gap:14px; margin-bottom:18px;" id="kpiVentas"></div>
+
+  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; flex-wrap:wrap; gap:10px;">
+    <div style="display:flex; gap:8px;">
+      <select id="filtroTipo" class="form-control-giseca" style="width:170px;">
+        <option value="">Todos los tipos</option>
+        <option value="CON_FACTURA">Con factura</option>
+        <option value="SIN_FACTURA">Sin factura</option>
+      </select>
+      <select id="filtroModalidad" class="form-control-giseca" style="width:150px;">
+        <option value="">Todas las modalidades</option>
+        <option value="CONTADO">Contado</option>
+        <option value="CREDITO">Crédito</option>
+      </select>
+    </div>
+    <div style="display:flex; gap:8px;">
+      <button class="btn-giseca btn-outline" onclick="document.getElementById('modalSIAT').classList.add('abierto')"><i class="bi bi-bank"></i> Importar Libro SIAT</button>
+      <button class="btn-giseca btn-outline" onclick="document.getElementById('modalCSV').classList.add('abierto')"><i class="bi bi-file-earmark-arrow-up"></i> Importar CSV</button>
+      <button class="btn-giseca btn-primario" onclick="abrirModalVenta()"><i class="bi bi-plus-lg"></i> Nueva Venta</button>
+    </div>
+  </div>
+
+  <div class="card-giseca" style="padding:0; overflow:hidden;">
+    <table class="tabla-giseca">
+      <thead><tr><th>Comprobante venta</th><th>Origen</th><th>Modalidad</th><th>Fecha</th><th>Cliente</th><th class="text-end">Total</th><th class="text-end">Débito Fiscal</th><th>Comp. Ingreso</th><th></th></tr></thead>
+      <tbody id="tbodyVentas"></tbody>
+    </table>
+  </div>
+  <div id="sinVentas" style="display:none; text-align:center; color:var(--gc-gris-claro); padding:40px;"><i class="bi bi-cash-coin" style="font-size:30px; display:block; margin-bottom:8px; opacity:.5;"></i>Sin ventas registradas todavía.</div>
+
+</div>
+
+<!-- Modal: Nueva Venta -->
+<div class="modal-giseca" id="modalVenta">
+  <div class="modal-box" style="max-width:720px;">
+    <h6 id="v_tituloModal">Nueva Venta</h6>
+    <input type="hidden" id="v_editId">
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+      <div>
+        <label class="form-label-giseca">Cliente *</label>
+        <select id="v_cliente" class="form-control-giseca"></select>
+      </div>
+      <div><label class="form-label-giseca">Nuevo cliente (opcional)</label><input id="v_clienteNuevo" class="form-control-giseca" placeholder="Escribe para crear uno nuevo"></div>
+      <div><label class="form-label-giseca">Tipo</label>
+        <select id="v_tipo" class="form-control-giseca">
+          <option value="CON_FACTURA">Con factura</option>
+          <option value="SIN_FACTURA">Sin factura</option>
+        </select>
+      </div>
+      <div><label class="form-label-giseca">Modalidad</label>
+        <select id="v_modalidad" class="form-control-giseca">
+          <option value="CONTADO">Contado</option>
+          <option value="CREDITO">Crédito</option>
+        </select>
+      </div>
+      <div><label class="form-label-giseca">Fecha</label><input type="date" id="v_fecha" class="form-control-giseca"></div>
+    </div>
+
+    <div style="margin-top:14px; position:relative;">
+      <label class="form-label-giseca">Agregar producto</label>
+      <input type="text" id="v_buscador" class="form-control-giseca" placeholder="Buscar por código o descripción...">
+      <div id="resultadosBusquedaVenta"></div>
+    </div>
+
+    <table class="tabla-giseca" style="margin-top:12px;" id="tablaItemsVenta">
+      <thead><tr><th>Código</th><th>Descripción</th><th style="width:80px">Cant.</th><th style="width:100px">Precio</th><th style="width:100px">Total</th><th></th></tr></thead>
+      <tbody></tbody>
+    </table>
+
+    <div style="display:flex; justify-content:flex-end; margin-top:10px;">
+      <div style="width:260px;">
+        <div style="display:flex; justify-content:space-between;"><span>Subtotal:</span><strong id="v_lblSubtotal">0.00</strong></div>
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <span>Descuento:</span>
+          <input type="number" id="v_descuento" value="0" style="width:90px; border:1px solid var(--gc-borde); border-radius:4px; padding:4px; text-align:right;">
+        </div>
+        <div style="display:flex; justify-content:space-between; border-top:2px solid var(--gc-texto); padding-top:6px; margin-top:6px;">
+          <strong>Total:</strong><strong id="v_lblTotal" style="color:var(--gc-primario-oscuro);">Bs 0.00</strong>
+        </div>
+      </div>
+    </div>
+
+    <div style="display:flex; gap:8px; margin-top:16px;">
+      <button class="btn-giseca btn-primario" onclick="guardarVenta()">Guardar Venta</button>
+      <button class="btn-giseca btn-outline" onclick="document.getElementById('modalVenta').classList.remove('abierto')">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Editar Venta SIAT (sin detalle de productos) -->
+<div class="modal-giseca" id="modalEditarSIATVenta">
+  <div class="modal-box">
+    <h6>Editar Venta SIAT</h6>
+    <input type="hidden" id="vs_id">
+    <p style="font-size:12.5px; color:var(--gc-gris);">Esta venta viene del Libro de Ventas del SIAT y no tiene detalle de productos, así que no afecta el stock.</p>
+    <div style="display:grid; gap:10px;">
+      <div><label class="form-label-giseca">Cliente</label><input id="vs_cliente" class="form-control-giseca"></div>
+      <div><label class="form-label-giseca">Fecha</label><input type="date" id="vs_fecha" class="form-control-giseca"></div>
+      <div><label class="form-label-giseca">N° Factura SIAT</label><input id="vs_numeroFactura" class="form-control-giseca"></div>
+      <div><label class="form-label-giseca">Importe total</label><input type="number" step="0.01" id="vs_total" class="form-control-giseca"></div>
+      <div><label class="form-label-giseca">Base débito fiscal</label><input type="number" step="0.01" id="vs_baseDF" class="form-control-giseca"></div>
+      <div><label class="form-label-giseca">Débito fiscal</label><input type="number" step="0.01" id="vs_debitoFiscal" class="form-control-giseca"></div>
+    </div>
+    <div style="display:flex; gap:8px; margin-top:16px;">
+      <button class="btn-giseca btn-primario" onclick="guardarEdicionSIATVenta()">Guardar cambios</button>
+      <button class="btn-giseca btn-outline" onclick="document.getElementById('modalEditarSIATVenta').classList.remove('abierto')">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Importar Libro de Ventas SIAT -->
+<div class="modal-giseca" id="modalSIAT">
+  <div class="modal-box">
+    <h6><i class="bi bi-bank" style="color:var(--gc-primario);"></i> Importar Libro de Ventas SIAT</h6>
+    <p style="font-size:12.5px; color:var(--gc-gris);">
+      Sube el CSV que descargas directo del SIAT (Libro de Ventas IVA). El sistema reconoce automáticamente
+      el cliente (NIT/razón social), N° de factura, fecha, <strong>monto total</strong> y <strong>débito fiscal</strong>.
+      No afecta el stock (el SIAT no detalla productos). Se genera un <strong>comprobante de Ingreso</strong> por
+      cada factura, y evita duplicados si vuelves a subir el mismo archivo.
+    </p>
+    <input type="file" id="archivoSIATVentas" accept=".csv" class="form-control-giseca" style="margin-bottom:12px;">
+    <div id="resultadoSIATVentas"></div>
+    <div style="display:flex; gap:8px; margin-top:14px;">
+      <button class="btn-giseca btn-primario" onclick="procesarSIATVentas()"><i class="bi bi-upload"></i> Importar</button>
+      <button class="btn-giseca btn-outline" onclick="document.getElementById('modalSIAT').classList.remove('abierto')">Cerrar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Importar CSV -->
+<div class="modal-giseca" id="modalCSV">
+  <div class="modal-box">
+    <h6>Importar Ventas desde CSV</h6>
+    <p style="font-size:12.5px; color:var(--gc-gris);">
+      Columnas esperadas: <code>Numero,Fecha,Cliente,Tipo,Modalidad,Codigo,Descripcion,Cantidad,Precio,Descuento</code><br>
+      Usa el mismo <strong>Numero</strong> en varias filas para agrupar productos de una misma venta.
+      <strong>Tipo</strong> = "CON_FACTURA"/"SIN_FACTURA", <strong>Modalidad</strong> = "CONTADO"/"CREDITO".
+    </p>
+    <input type="file" id="v_archivoCSV" accept=".csv" class="form-control-giseca" style="margin-bottom:12px;">
+    <div id="v_resultadoImportacion"></div>
+    <div style="display:flex; gap:8px; margin-top:14px;">
+      <button class="btn-giseca btn-primario" onclick="procesarCSVVentas()">Importar</button>
+      <button class="btn-giseca btn-outline" onclick="document.getElementById('modalCSV').classList.remove('abierto')">Cerrar</button>
+    </div>
+  </div>
+</div>
+
+<script src="js/data.js"></script>
+<script src="js/layout.js"></script>
+<script>
+renderLayout('ventas', 'Ventas');
+
+function render() {
+  const filtroTipo = document.getElementById('filtroTipo').value;
+  const filtroModalidad = document.getElementById('filtroModalidad').value;
+  let lista = [...DB.ventas()].reverse();
+  if (filtroTipo) lista = lista.filter(v => v.tipo === filtroTipo);
+  if (filtroModalidad) lista = lista.filter(v => v.modalidad === filtroModalidad);
+
+  const activas = DB.ventas().filter(v => v.estado === 'ACTIVA');
+  const totalGeneral = activas.reduce((s,v) => s + v.total, 0);
+  const credito = activas.filter(v => v.modalidad === 'CREDITO').reduce((s,v) => s + v.total, 0);
+  const contado = activas.filter(v => v.modalidad === 'CONTADO').reduce((s,v) => s + v.total, 0);
+  document.getElementById('kpiVentas').innerHTML = `
+    <div class="kpi naranja"><div class="label"><i class="bi bi-cash-coin"></i> Total vendido</div><div class="value">Bs ${formatoMoneda(totalGeneral)}</div></div>
+    <div class="kpi verde"><div class="label"><i class="bi bi-wallet2"></i> Ventas contado</div><div class="value">Bs ${formatoMoneda(contado)}</div></div>
+    <div class="kpi azul"><div class="label"><i class="bi bi-hourglass-split"></i> Ventas crédito</div><div class="value">Bs ${formatoMoneda(credito)}</div></div>
+    <div class="kpi info"><div class="label"><i class="bi bi-receipt-cutoff"></i> Débito fiscal (SIAT)</div><div class="value">Bs ${formatoMoneda(DB.resumenTributarioSIAT().debitoFiscal)}</div></div>
+    <div class="kpi gris"><div class="label"><i class="bi bi-receipt"></i> Comprobantes emitidos</div><div class="value">${activas.length}</div></div>
+  `;
+
+  document.getElementById('tbodyVentas').innerHTML = lista.map(v => `
+    <tr class="${v.estado === 'ANULADA' ? 'alerta' : ''}">
+      <td><span class="codigo-chip">${v.numero}</span>${v.idProformaOrigen ? ` <span class="codigo-chip equivalente" title="Generada desde proforma">PF</span>` : ''}${v.numeroFacturaSIAT ? `<div style="font-size:10.5px; color:var(--gc-gris-claro); margin-top:2px;">Fact. ${v.numeroFacturaSIAT}</div>` : ''}</td>
+      <td>${v.origen === 'SIAT' ? '<span class="estado estado-enviada"><i class="bi bi-bank"></i> SIAT</span>' : `<span class="estado ${v.tipo === 'CON_FACTURA' ? 'estado-aprobada' : 'estado-borrador'}">${v.tipo === 'CON_FACTURA' ? 'Con factura' : 'Sin factura'}</span>`}</td>
+      <td><span class="estado ${v.modalidad === 'CREDITO' ? 'estado-rechazada' : 'estado-enviada'}">${v.modalidad}</span></td>
+      <td>${v.fecha}</td>
+      <td>${v.clienteNombre}</td>
+      <td class="text-end fw-bold">Bs ${formatoMoneda(v.total)}</td>
+      <td class="text-end">${v.debitoFiscal ? 'Bs ' + formatoMoneda(v.debitoFiscal) : '—'}</td>
+      <td><a href="comprobantes.html?buscar=${v.comprobante}"><span class="codigo-chip equivalente">${v.comprobante || '—'}</span></a></td>
+      <td class="text-end">
+        ${v.estado === 'ACTIVA' ? `<button class="btn-giseca btn-outline btn-icon btn-sm" title="Anular" onclick="anular(${v.id})"><i class="bi bi-x-circle"></i></button>` : '<span class="text-muted small">Anulada</span>'}
+        <button class="btn-giseca btn-outline btn-icon btn-sm" onclick='editarVenta(${JSON.stringify(v)})' title="Editar"><i class="bi bi-pencil"></i></button>
+        <button class="btn-giseca btn-outline btn-icon btn-sm" onclick="eliminarVentaConfirm(${v.id})" title="Eliminar"><i class="bi bi-trash" style="color:var(--gc-rojo);"></i></button>
+      </td>
+    </tr>
+  `).join('');
+  document.getElementById('sinVentas').style.display = lista.length ? 'none' : 'block';
+}
+document.getElementById('filtroTipo').addEventListener('change', render);
+document.getElementById('filtroModalidad').addEventListener('change', render);
+
+function anular(id) {
+  if (!confirm('¿Anular esta venta? Se revertirá el stock.')) return;
+  DB.anularVenta(id);
+  mostrarToast('Venta anulada, stock revertido', 'exito');
+  render();
+}
+
+// ---- Modal Nueva Venta ----
+function abrirModalVenta() {
+  document.getElementById('v_tituloModal').textContent = 'Nueva Venta';
+  document.getElementById('v_editId').value = '';
+  const selectCli = document.getElementById('v_cliente');
+  selectCli.innerHTML = DB.clientes().map(c => `<option value="${c.nombre}">${c.nombre}</option>`).join('');
+  document.getElementById('v_clienteNuevo').value = '';
+  document.getElementById('v_fecha').value = new Date().toISOString().slice(0,10);
+  document.querySelector('#tablaItemsVenta tbody').innerHTML = '';
+  document.getElementById('v_descuento').value = 0;
+  recalcularVenta();
+  document.getElementById('modalVenta').classList.add('abierto');
+}
+
+function editarVenta(v) {
+  if (v.origen === 'SIAT') { abrirModalEditarSIATVenta(v); return; }
+
+  document.getElementById('v_tituloModal').textContent = 'Editar Venta ' + v.numero;
+  document.getElementById('v_editId').value = v.id;
+  const selectCli = document.getElementById('v_cliente');
+  selectCli.innerHTML = DB.clientes().map(c => `<option value="${c.nombre}" ${c.nombre===v.clienteNombre?'selected':''}>${c.nombre}</option>`).join('');
+  document.getElementById('v_clienteNuevo').value = '';
+  document.getElementById('v_tipo').value = v.tipo;
+  document.getElementById('v_modalidad').value = v.modalidad;
+  document.getElementById('v_fecha').value = v.fecha;
+  document.getElementById('v_descuento').value = v.descuento;
+
+  const tbody = document.querySelector('#tablaItemsVenta tbody');
+  tbody.innerHTML = '';
+  v.items.forEach(it => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><span class="codigo-chip">${it.codigo}</span><input type="hidden" class="vi-id" value="${it.id_producto}"><input type="hidden" class="vi-desc" value="${it.descripcion}"></td>
+      <td>${it.descripcion}</td>
+      <td><input type="number" step="0.01" min="0.01" value="${it.cantidad}" class="vi-cant" oninput="recalcularVenta()"></td>
+      <td><input type="number" step="0.01" value="${it.precio}" class="vi-precio" oninput="recalcularVenta()"></td>
+      <td class="text-end vi-total">${(it.cantidad*it.precio).toFixed(2)}</td>
+      <td><button class="btn-giseca btn-outline btn-icon btn-sm" onclick="this.closest('tr').remove(); recalcularVenta();">✕</button></td>`;
+    tbody.appendChild(tr);
+  });
+  recalcularVenta();
+  document.getElementById('modalVenta').classList.add('abierto');
+}
+
+function eliminarVentaConfirm(id) {
+  const v = DB.buscarVentaPorId(id);
+  const advertenciaStock = (v.items.length && v.estado === 'ACTIVA') ? ' Se devolverá el stock que había descontado.' : '';
+  if (!confirm(`¿Eliminar la venta ${v.numero}?${advertenciaStock} También se borrará su comprobante de ingreso.`)) return;
+  DB.eliminarVenta(id);
+  mostrarToast('Venta eliminada', 'exito');
+  render();
+}
+
+function abrirModalEditarSIATVenta(v) {
+  document.getElementById('vs_id').value = v.id;
+  document.getElementById('vs_cliente').value = v.clienteNombre;
+  document.getElementById('vs_fecha').value = v.fecha;
+  document.getElementById('vs_numeroFactura').value = v.numeroFacturaSIAT || '';
+  document.getElementById('vs_total').value = v.total;
+  document.getElementById('vs_baseDF').value = v.baseDF || 0;
+  document.getElementById('vs_debitoFiscal').value = v.debitoFiscal || 0;
+  document.getElementById('modalEditarSIATVenta').classList.add('abierto');
+}
+
+function guardarEdicionSIATVenta() {
+  const id = document.getElementById('vs_id').value;
+  DB.actualizarVenta(id, {
+    clienteNombre: document.getElementById('vs_cliente').value.trim(),
+    fecha: document.getElementById('vs_fecha').value,
+    numeroFacturaSIAT: document.getElementById('vs_numeroFactura').value.trim(),
+    total: parseFloat(document.getElementById('vs_total').value) || 0,
+    baseDF: parseFloat(document.getElementById('vs_baseDF').value) || 0,
+    debitoFiscal: parseFloat(document.getElementById('vs_debitoFiscal').value) || 0,
+  }, null);
+  mostrarToast('Venta SIAT actualizada', 'exito');
+  document.getElementById('modalEditarSIATVenta').classList.remove('abierto');
+  render();
+}
+
+const buscadorVenta = document.getElementById('v_buscador');
+const resultadosVenta = document.getElementById('resultadosBusquedaVenta');
+buscadorVenta.addEventListener('input', function() {
+  const termino = this.value.trim();
+  if (termino.length < 2) { resultadosVenta.innerHTML = ''; return; }
+  const encontrados = DB.buscarProductos(termino);
+  resultadosVenta.innerHTML = encontrados.map(p =>
+    `<div class="item" onclick='agregarItemVenta(${JSON.stringify(p)})'><strong>${p.codigo}</strong> — ${p.descripcion} <span class="text-muted">Stock: ${p.stock}</span></div>`
+  ).join('') || '<div class="item">Sin resultados</div>';
+});
+
+function agregarItemVenta(p) {
+  const tbody = document.querySelector('#tablaItemsVenta tbody');
+  const tr = document.createElement('tr');
+  tr.innerHTML = `
+    <td><span class="codigo-chip">${p.codigo}</span><input type="hidden" class="vi-id" value="${p.id}"><input type="hidden" class="vi-desc" value="${p.descripcion}"></td>
+    <td>${p.descripcion}</td>
+    <td><input type="number" step="0.01" min="0.01" value="1" class="vi-cant" oninput="recalcularVenta()"></td>
+    <td><input type="number" step="0.01" value="${p.precio}" class="vi-precio" oninput="recalcularVenta()"></td>
+    <td class="text-end vi-total">${Number(p.precio).toFixed(2)}</td>
+    <td><button class="btn-giseca btn-outline btn-icon btn-sm" onclick="this.closest('tr').remove(); recalcularVenta();">✕</button></td>`;
+  tbody.appendChild(tr);
+  resultadosVenta.innerHTML = ''; buscadorVenta.value = '';
+  recalcularVenta();
+}
+
+document.getElementById('v_descuento').addEventListener('input', recalcularVenta);
+function recalcularVenta() {
+  let subtotal = 0;
+  document.querySelectorAll('#tablaItemsVenta tbody tr').forEach(tr => {
+    const cant = parseFloat(tr.querySelector('.vi-cant').value) || 0;
+    const precio = parseFloat(tr.querySelector('.vi-precio').value) || 0;
+    const total = cant * precio;
+    tr.querySelector('.vi-total').textContent = total.toFixed(2);
+    subtotal += total;
+  });
+  const desc = parseFloat(document.getElementById('v_descuento').value) || 0;
+  document.getElementById('v_lblSubtotal').textContent = subtotal.toFixed(2);
+  document.getElementById('v_lblTotal').textContent = 'Bs ' + (subtotal - desc).toFixed(2);
+}
+
+function guardarVenta() {
+  const nuevoNombre = document.getElementById('v_clienteNuevo').value.trim();
+  let clienteNombre = nuevoNombre || document.getElementById('v_cliente').value;
+  if (!clienteNombre) { mostrarToast('Selecciona o escribe un cliente', 'error'); return; }
+  if (nuevoNombre && !DB.clientes().find(c => c.nombre.toLowerCase() === nuevoNombre.toLowerCase())) {
+    DB.crearCliente({ nombre: nuevoNombre, nit: '', telefono: '', correo: '', contacto: '' });
+  }
+
+  const filas = document.querySelectorAll('#tablaItemsVenta tbody tr');
+  if (!filas.length) { mostrarToast('Agrega al menos un producto', 'error'); return; }
+
+  const items = [];
+  filas.forEach(tr => {
+    const cantidad = parseFloat(tr.querySelector('.vi-cant').value) || 0;
+    const precio = parseFloat(tr.querySelector('.vi-precio').value) || 0;
+    if (cantidad <= 0) return;
+    items.push({
+      id_producto: Number(tr.querySelector('.vi-id').value),
+      codigo: tr.querySelector('.codigo-chip').textContent,
+      descripcion: tr.querySelector('.vi-desc').value,
+      cantidad, precio,
+    });
+  });
+
+  const cabecera = {
+    tipo: document.getElementById('v_tipo').value,
+    modalidad: document.getElementById('v_modalidad').value,
+    fecha: document.getElementById('v_fecha').value,
+    clienteNombre,
+    descuento: parseFloat(document.getElementById('v_descuento').value) || 0,
+    metodo: 'Efectivo',
+  };
+
+  const editId = document.getElementById('v_editId').value;
+  if (editId) {
+    DB.actualizarVenta(editId, cabecera, items);
+    mostrarToast('Venta actualizada', 'exito');
+  } else {
+    const venta = DB.crearVenta(cabecera, items);
+    mostrarToast(`Venta ${venta.numero} guardada. Comprobante ${venta.comprobante} generado.`, 'exito');
+  }
+  document.getElementById('modalVenta').classList.remove('abierto');
+  render();
+}
+
+// ---- Importación Libro de Ventas SIAT ----
+function procesarSIATVentas() {
+  const archivo = document.getElementById('archivoSIATVentas').files[0];
+  if (!archivo) { mostrarToast('Selecciona el archivo CSV del SIAT', 'error'); return; }
+  const lector = new FileReader();
+  lector.onload = e => {
+    const filas = DB.parsearCSV(e.target.result);
+    const resultado = DB.importarVentasSIAT(filas);
+    document.getElementById('resultadoSIATVentas').innerHTML = `
+      <div style="background:var(--gc-verde-suave); color:var(--gc-verde); padding:10px; border-radius:6px; font-size:13px;">
+        ${resultado.creadas} factura(s) importada(s) correctamente.
+        ${resultado.duplicadas ? `${resultado.duplicadas} ya estaban importadas (se omitieron).` : ''}
+      </div>
+      ${resultado.errores.length ? `<div style="color:var(--gc-rojo); font-size:12px; margin-top:6px;">${resultado.errores.join('<br>')}</div>` : ''}
+    `;
+    mostrarToast(resultado.creadas + ' facturas del SIAT importadas', 'exito');
+    render();
+  };
+  lector.readAsText(archivo);
+}
+
+// ---- Importación CSV ----
+function procesarCSVVentas() {
+  const archivo = document.getElementById('v_archivoCSV').files[0];
+  if (!archivo) { mostrarToast('Selecciona un archivo CSV', 'error'); return; }
+  const lector = new FileReader();
+  lector.onload = e => {
+    const filas = DB.parsearCSV(e.target.result);
+    const resultado = DB.importarVentasCSV(filas);
+    document.getElementById('v_resultadoImportacion').innerHTML = `
+      <div style="background:var(--gc-verde-suave); color:var(--gc-verde); padding:10px; border-radius:6px; font-size:13px;">
+        ${resultado.creadas} venta(s) importada(s) correctamente.
+      </div>
+      ${resultado.errores.length ? `<div style="color:var(--gc-rojo); font-size:12px; margin-top:6px;">${resultado.errores.join('<br>')}</div>` : ''}
+    `;
+    mostrarToast(resultado.creadas + ' ventas importadas', 'exito');
+    render();
+  };
+  lector.readAsText(archivo);
+}
+
+render();
+</script>
+</body>
+</html>

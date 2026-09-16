@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="es" data-bs-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Proformas - GISECA SRL ERP</title>
+<link rel="stylesheet" href="css/app.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
+<script>
+(function(){
+  const tema = localStorage.getItem('giseca_tema') || 'light';
+  document.documentElement.setAttribute('data-bs-theme', tema);
+})();
+</script>
+</head>
+<body>
+<div id="contenidoPagina" style="display:none;">
+
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+        <select id="filtroEstado" class="form-control-giseca" style="width:200px;">
+          <option value="">Todos los estados</option>
+          <option>BORRADOR</option><option>ENVIADA</option><option>APROBADA</option>
+          <option>RECHAZADA</option><option>CONVERTIDA</option>
+        </select>
+        <a href="proformas-crear.html" class="btn-giseca btn-primario"><i class="bi bi-plus-lg"></i> Nueva Proforma</a>
+      </div>
+
+      <div class="card-giseca" style="padding:0; overflow:hidden;">
+        <table class="tabla-giseca">
+          <thead><tr><th>N°</th><th>Fecha</th><th>Cliente</th><th class="text-end">Total</th><th>Estado</th><th></th></tr></thead>
+          <tbody id="tbodyProformas"></tbody>
+        </table>
+      </div>
+      <div id="sinResultados" style="display:none; text-align:center; color:var(--gc-gris-claro); padding:40px;">
+        <i class="bi bi-file-earmark-plus" style="font-size:30px; display:block; margin-bottom:8px; opacity:.5;"></i>
+        Aún no hay proformas. <a href="proformas-crear.html">Crear la primera →</a>
+      </div>
+
+  </div>
+
+<script src="js/data.js"></script>
+<script src="js/layout.js"></script>
+<script>
+renderLayout('proformas', 'Proformas');
+
+function render() {
+  const filtro = document.getElementById('filtroEstado').value;
+  let lista = [...DB.proformas()].reverse();
+  if (filtro) lista = lista.filter(p => p.estado === filtro);
+
+  document.getElementById('tbodyProformas').innerHTML = lista.map(p => `
+    <tr>
+      <td><span class="codigo-chip">${p.numero}</span></td>
+      <td>${p.fecha}</td>
+      <td>${p.clienteNombre}</td>
+      <td class="text-end fw-bold">Bs ${formatoMoneda(p.total)}</td>
+      <td><span class="estado estado-${p.estado.toLowerCase()}">${p.estado}</span></td>
+      <td class="text-end"><a href="proformas-ver.html?id=${p.id}" class="btn-giseca btn-outline btn-icon btn-sm"><i class="bi bi-eye"></i></a></td>
+    </tr>
+  `).join('');
+
+  document.getElementById('sinResultados').style.display = lista.length ? 'none' : 'block';
+}
+
+document.getElementById('filtroEstado').addEventListener('change', render);
+render();
+</script>
+</body>
+</html>

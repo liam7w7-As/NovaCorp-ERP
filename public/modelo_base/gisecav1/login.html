@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="es" data-bs-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ingresar - GISECA SRL ERP</title>
+<link rel="stylesheet" href="css/app.css">
+<style>
+  body{ background: var(--fondo); min-height:100vh; display:flex; align-items:center; justify-content:center; }
+  .login-wrap{ width:100%; max-width:380px; }
+  .login-card{ background:#fff; border-radius:10px; padding:32px 30px; box-shadow:0 4px 24px rgba(16,24,40,.08); border:1px solid var(--borde); }
+  .brand-top{ text-align:center; margin-bottom:22px; }
+  .brand-top .logo-mark{ width:56px;height:56px;background:var(--naranja);border-radius:12px; display:inline-flex;align-items:center;justify-content:center; font-weight:800; color:#fff; font-size:28px; margin-bottom:10px; }
+  .brand-top .name{ font-size:22px; }
+  .brand-top .sub{ color:var(--gris-metal-claro); font-size:12px; }
+  .demo-hint{ background:var(--naranja-suave); border:1px solid #F3C7AE; color:var(--naranja-oscuro); font-size:12px; padding:8px 12px; border-radius:6px; margin-bottom:16px; }
+  .error-msg{ background:var(--rojo-suave); color:var(--rojo); font-size:12.5px; padding:8px 12px; border-radius:6px; margin-bottom:14px; display:none; }
+</style>
+<script>
+(function(){
+  const tema = localStorage.getItem('giseca_tema') || 'light';
+  document.documentElement.setAttribute('data-bs-theme', tema);
+})();
+</script>
+</head>
+<body>
+
+<div class="login-wrap">
+  <div class="login-card">
+    <div class="brand-top">
+      <div class="logo-mark">G</div>
+      <div class="name">GISECA SRL</div>
+      <div class="sub">Sistema ERP Comercial — Modo local</div>
+    </div>
+
+    <div class="demo-hint">💻 Funciona 100% en tu navegador, sin instalar nada. Los datos se guardan en esta computadora.</div>
+    <div class="error-msg" id="errorMsg">Usuario o contraseña incorrectos.</div>
+
+    <form id="formLogin">
+      <div style="margin-bottom:16px;">
+        <label class="form-label-giseca">Usuario</label>
+        <input type="text" id="usuario" class="form-control-giseca" value="admin" autofocus>
+      </div>
+      <div style="margin-bottom:20px;">
+        <label class="form-label-giseca">Contraseña</label>
+        <input type="password" id="password" class="form-control-giseca" value="admin123">
+      </div>
+      <button type="submit" class="btn-giseca btn-primario" style="width:100%; justify-content:center; padding:11px;">
+        Ingresar al sistema
+      </button>
+      <p style="text-align:center; font-size:11.5px; color:var(--gris-metal-claro); margin-top:14px; margin-bottom:0;">
+        Usuario: <strong>admin</strong> &nbsp;|&nbsp; Contraseña: <strong>admin123</strong>
+      </p>
+    </form>
+  </div>
+</div>
+
+<script src="js/data.js"></script>
+<script>
+document.getElementById('formLogin').addEventListener('submit', function(e){
+  e.preventDefault();
+  const usuario = document.getElementById('usuario').value.trim();
+  const password = document.getElementById('password').value;
+  if (usuario === 'admin' && password === 'admin123') {
+    DB.iniciarSesion();
+    window.location.href = 'dashboard.html';
+  } else {
+    document.getElementById('errorMsg').style.display = 'block';
+  }
+});
+</script>
+</body>
+</html>

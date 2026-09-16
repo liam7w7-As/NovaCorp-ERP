@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="es" data-bs-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Compras - GISECA SRL ERP</title>
+<link rel="stylesheet" href="css/app.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
+<style>
+  #resultadosBusquedaCompra{ position:absolute; background:var(--gc-superficie); border:1px solid var(--gc-borde); border-radius:8px; box-shadow:0 10px 30px rgba(0,0,0,.12); width:100%; max-width:500px; max-height:240px; overflow-y:auto; z-index:50; margin-top:4px; }
+  #resultadosBusquedaCompra .item{ padding:9px 14px; cursor:pointer; border-bottom:1px solid var(--gc-borde); font-size:13px; }
+  #resultadosBusquedaCompra .item:hover{ background:var(--gc-primario-suave); }
+  #tablaItemsCompra input{ border:1px solid var(--gc-borde); border-radius:4px; padding:5px 6px; font-size:12.5px; width:100%; background:var(--gc-superficie); color:var(--gc-texto); }
+</style>
+<script>
+(function(){
+  const tema = localStorage.getItem('giseca_tema') || 'light';
+  document.documentElement.setAttribute('data-bs-theme', tema);
+})();
+</script>
+</head>
+<body>
+<div id="contenidoPagina" style="display:none;">
+
+  <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin-bottom:18px;" id="kpiCompras"></div>
+
+  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; flex-wrap:wrap; gap:10px;">
+    <div style="display:flex; gap:8px;">
+      <select id="filtroTipo" class="form-control-giseca" style="width:180px;">
+        <option value="">Todos los tipos</option>
+        <option value="CON_FACTURA">Con factura</option>
+        <option value="SIN_FACTURA">Sin factura</option>
+      </select>
+    </div>
+    <div style="display:flex; gap:8px;">
+      <button class="btn-giseca btn-outline" onclick="document.getElementById('modalSIAT').classList.add('abierto')"><i class="bi bi-bank"></i> Importar Libro SIAT</button>
+      <button class="btn-giseca btn-outline" onclick="document.getElementById('modalCSV').classList.add('abierto')"><i class="bi bi-file-earmark-arrow-up"></i> Importar CSV</button>
+      <button class="btn-giseca btn-primario" onclick="abrirModalCompra()"><i class="bi bi-plus-lg"></i> Nueva Compra</button>
+    </div>
+  </div>
+
+  <div class="card-giseca" style="padding:0; overflow:hidden;">
+    <table class="tabla-giseca">
+      <thead><tr><th>Documento</th><th>Origen</th><th>Fecha</th><th>Proveedor</th><th class="text-end">Total</th><th class="text-end">Crédito Fiscal</th><th>Comprobante</th><th></th></tr></thead>
+      <tbody id="tbodyCompras"></tbody>
+    </table>
+  </div>
+  <div id="sinCompras" style="display:none; text-align:center; color:var(--gc-gris-claro); padding:40px;"><i class="bi bi-cart-x" style="font-size:30px; display:block; margin-bottom:8px; opacity:.5;"></i>Sin compras registradas todavía.</div>
+
+</div>
+
+<!-- Modal: Nueva Compra -->
+<div class="modal-giseca" id="modalCompra">
+  <div class="modal-box" style="max-width:720px;">
+    <h6 id="c_tituloModal">Nueva Compra</h6>
+    <input type="hidden" id="c_editId">
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+      <div>
+        <label class="form-label-giseca">Proveedor *</label>
+        <select id="c_proveedor" class="form-control-giseca"></select>
+      </div>
+      <div><label class="form-label-giseca">Nuevo proveedor (opcional)</label><input id="c_proveedorNuevo" class="form-control-giseca" placeholder="Escribe para crear uno nuevo"></div>
+      <div><label class="form-label-giseca">Tipo</label>
+        <select id="c_tipo" class="form-control-giseca">
+          <option value="CON_FACTURA">Con factura</option>
+          <option value="SIN_FACTURA">Sin factura</option>
+        </select>
+      </div>
+      <div><label class="form-label-giseca">Fecha</label><input type="date" id="c_fecha" class="form-control-giseca"></div>
+    </div>
+
+    <div style="margin-top:14px; position:relative;">
+      <label class="form-label-giseca">Agregar producto</label>
+      <input type="text" id="c_buscador" class="form-control-giseca" placeholder="Buscar por código o descripción...">
+      <div id="resultadosBusquedaCompra"></div>
+    </div>
+
+    <table class="tabla-giseca" style="margin-top:12px;" id="tablaItemsCompra">
+      <thead><tr><th>Código</th><th>Descripción</th><th style="width:80px">Cant.</th><th style="width:100px">Costo</th><th style="width:100px">Total</th><th></th></tr></thead>
+      <tbody></tbody>
+    </table>
+
+    <div style="display:flex; justify-content:flex-end; margin-top:10px;">
+      <div style="width:260px;">
+        <div style="display:flex; justify-content:space-between;"><span>Subtotal:</span><strong id="c_lblSubtotal">0.00</strong></div>
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <span>Descuento:</span>
+          <input type="number" id="c_descuento" value="0" style="width:90px; border:1px solid var(--gc-borde); border-radius:4px; padding:4px; text-align:right;">
+        </div>
+        <div style="display:flex; justify-content:space-between; border-top:2px solid var(--gc-texto); padding-top:6px; margin-top:6px;">
+          <strong>Total:</strong><strong id="c_lblTotal" style="color:var(--gc-primario-oscuro);">Bs 0.00</strong>
+        </div>
+      </div>
+    </div>
+
+    <div style="display:flex; gap:8px; margin-top:16px;">
+      <button class="btn-giseca btn-primario" onclick="guardarCompra()">Guardar Compra</button>
+      <button class="btn-giseca btn-outline" onclick="document.getElementById('modalCompra').classList.remove('abierto')">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Editar Compra SIAT (sin detalle de productos) -->
+<div class="modal-giseca" id="modalEditarSIATCompra">
+  <div class="modal-box">
+    <h6>Editar Compra SIAT</h6>
+    <input type="hidden" id="es_id">
+    <p style="font-size:12.5px; color:var(--gc-gris);">Esta compra viene del Libro de Compras del SIAT y no tiene detalle de productos, así que no afecta el stock.</p>
+    <div style="display:grid; gap:10px;">
+      <div><label class="form-label-giseca">Proveedor</label><input id="es_proveedor" class="form-control-giseca"></div>
+      <div><label class="form-label-giseca">Fecha</label><input type="date" id="es_fecha" class="form-control-giseca"></div>
+      <div><label class="form-label-giseca">N° Factura SIAT</label><input id="es_numeroFactura" class="form-control-giseca"></div>
+      <div><label class="form-label-giseca">Importe total</label><input type="number" step="0.01" id="es_total" class="form-control-giseca"></div>
+      <div><label class="form-label-giseca">Base crédito fiscal</label><input type="number" step="0.01" id="es_baseCF" class="form-control-giseca"></div>
+      <div><label class="form-label-giseca">Crédito fiscal</label><input type="number" step="0.01" id="es_creditoFiscal" class="form-control-giseca"></div>
+    </div>
+    <div style="display:flex; gap:8px; margin-top:16px;">
+      <button class="btn-giseca btn-primario" onclick="guardarEdicionSIATCompra()">Guardar cambios</button>
+      <button class="btn-giseca btn-outline" onclick="document.getElementById('modalEditarSIATCompra').classList.remove('abierto')">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Importar Libro de Compras SIAT -->
+<div class="modal-giseca" id="modalSIAT">
+  <div class="modal-box">
+    <h6><i class="bi bi-bank" style="color:var(--gc-primario);"></i> Importar Libro de Compras SIAT</h6>
+    <p style="font-size:12.5px; color:var(--gc-gris);">
+      Sube el CSV que descargas directo del SIAT (Libro de Compras IVA). El sistema reconoce automáticamente
+      el proveedor (NIT/razón social), N° de factura, fecha, <strong>monto total</strong> y <strong>crédito fiscal</strong>.
+      Como el SIAT no detalla productos, esta compra <strong>no afecta el stock</strong> del inventario — solo el registro
+      fiscal y contable. Se genera un <strong>comprobante de Egreso</strong> por cada factura, y si vuelves a subir
+      el mismo archivo, las facturas repetidas se detectan y no se duplican.
+    </p>
+    <input type="file" id="archivoSIATCompras" accept=".csv" class="form-control-giseca" style="margin-bottom:12px;">
+    <div id="resultadoSIATCompras"></div>
+    <div style="display:flex; gap:8px; margin-top:14px;">
+      <button class="btn-giseca btn-primario" onclick="procesarSIATCompras()"><i class="bi bi-upload"></i> Importar</button>
+      <button class="btn-giseca btn-outline" onclick="document.getElementById('modalSIAT').classList.remove('abierto')">Cerrar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Importar CSV -->
+<div class="modal-giseca" id="modalCSV">
+  <div class="modal-box">
+    <h6>Importar Compras desde CSV</h6>
+    <p style="font-size:12.5px; color:var(--gc-gris);">
+      Columnas esperadas: <code>Numero,Fecha,Proveedor,Tipo,Codigo,Descripcion,Cantidad,Costo,Descuento</code><br>
+      Usa el mismo <strong>Numero</strong> en varias filas para agrupar productos de un mismo documento.
+      Si el código de producto no existe, se crea automáticamente. <strong>Tipo</strong> = "CON_FACTURA" o "SIN_FACTURA".
+    </p>
+    <input type="file" id="c_archivoCSV" accept=".csv" class="form-control-giseca" style="margin-bottom:12px;">
+    <div id="c_resultadoImportacion"></div>
+    <div style="display:flex; gap:8px; margin-top:14px;">
+      <button class="btn-giseca btn-primario" onclick="procesarCSVCompras()">Importar</button>
+      <button class="btn-giseca btn-outline" onclick="document.getElementById('modalCSV').classList.remove('abierto')">Cerrar</button>
+    </div>
+  </div>
+</div>
+
+<script src="js/data.js"></script>
+<script src="js/layout.js"></script>
+<script>
+renderLayout('compras', 'Compras');
+
+function render() {
+  const filtro = document.getElementById('filtroTipo').value;
+  let lista = [...DB.compras()].reverse();
+  if (filtro) lista = lista.filter(c => c.tipo === filtro);
+
+  const todas = DB.compras();
+  const totalGeneral = todas.reduce((s,c) => s + c.total, 0);
+  const conFactura = todas.filter(c => c.tipo === 'CON_FACTURA').length;
+  const sinFactura = todas.filter(c => c.tipo === 'SIN_FACTURA').length;
+  document.getElementById('kpiCompras').innerHTML = `
+    <div class="kpi naranja"><div class="label"><i class="bi bi-cart-plus-fill"></i> Total comprado</div><div class="value">Bs ${formatoMoneda(totalGeneral)}</div></div>
+    <div class="kpi azul"><div class="label"><i class="bi bi-receipt-cutoff"></i> Crédito fiscal (SIAT)</div><div class="value">Bs ${formatoMoneda(DB.resumenTributarioSIAT().creditoFiscal)}</div></div>
+    <div class="kpi verde"><div class="label"><i class="bi bi-file-earmark-check"></i> Compras con factura</div><div class="value">${conFactura}</div></div>
+    <div class="kpi gris"><div class="label"><i class="bi bi-file-earmark"></i> Compras sin factura</div><div class="value">${sinFactura}</div></div>
+  `;
+
+  document.getElementById('tbodyCompras').innerHTML = lista.map(c => `
+    <tr>
+      <td><span class="codigo-chip">${c.numero}</span>${c.numeroFacturaSIAT ? `<div style="font-size:10.5px; color:var(--gc-gris-claro); margin-top:2px;">Fact. ${c.numeroFacturaSIAT}</div>` : ''}</td>
+      <td>${c.origen === 'SIAT' ? '<span class="estado estado-enviada"><i class="bi bi-bank"></i> SIAT</span>' : `<span class="estado ${c.tipo === 'CON_FACTURA' ? 'estado-aprobada' : 'estado-borrador'}">${c.tipo === 'CON_FACTURA' ? 'Con factura' : 'Sin factura'}</span>`}</td>
+      <td>${c.fecha}</td>
+      <td>${c.proveedorNombre}</td>
+      <td class="text-end fw-bold">Bs ${formatoMoneda(c.total)}</td>
+      <td class="text-end">${c.creditoFiscal ? 'Bs ' + formatoMoneda(c.creditoFiscal) : '—'}</td>
+      <td><a href="comprobantes.html?buscar=${c.comprobante}"><span class="codigo-chip equivalente">${c.comprobante || '—'}</span></a></td>
+      <td class="text-end">
+        <button class="btn-giseca btn-outline btn-icon btn-sm" onclick='verDetalleCompra(${JSON.stringify(c)})' title="Ver"><i class="bi bi-eye"></i></button>
+        <button class="btn-giseca btn-outline btn-icon btn-sm" onclick='editarCompra(${JSON.stringify(c)})' title="Editar"><i class="bi bi-pencil"></i></button>
+        <button class="btn-giseca btn-outline btn-icon btn-sm" onclick="eliminarCompraConfirm(${c.id})" title="Eliminar"><i class="bi bi-trash" style="color:var(--gc-rojo);"></i></button>
+      </td>
+    </tr>
+  `).join('');
+  document.getElementById('sinCompras').style.display = lista.length ? 'none' : 'block';
+}
+document.getElementById('filtroTipo').addEventListener('change', render);
+
+function verDetalleCompra(c) {
+  if (c.origen === 'SIAT') {
+    alert(`Compra ${c.numero} (importada del SIAT)\nProveedor: ${c.proveedorNombre} (NIT ${c.nitProveedor})\nN° Factura SIAT: ${c.numeroFacturaSIAT}\nCódigo de autorización: ${c.codigoAutorizacion}\n\nImporte total: Bs ${formatoMoneda(c.total)}\nBase para crédito fiscal: Bs ${formatoMoneda(c.baseCF)}\nCrédito fiscal: Bs ${formatoMoneda(c.creditoFiscal)}\nCon derecho a crédito fiscal: ${c.conDerechoCF ? 'SI' : 'NO'}\n\nComprobante generado: ${c.comprobante}\n\n(Este registro no tiene detalle de productos porque el SIAT no lo incluye — no afecta el stock del inventario.)`);
+    return;
+  }
+  const detalle = c.items.map(it => `${it.cantidad} x ${it.descripcion} (Bs ${formatoMoneda(it.costo)} c/u)`).join('\n');
+  alert(`Compra ${c.numero}\nProveedor: ${c.proveedorNombre}\n\n${detalle}\n\nTotal: Bs ${formatoMoneda(c.total)}\nComprobante: ${c.comprobante}`);
+}
+
+// ---- Modal Nueva Compra ----
+function abrirModalCompra() {
+  document.getElementById('c_tituloModal').textContent = 'Nueva Compra';
+  document.getElementById('c_editId').value = '';
+  const selectProv = document.getElementById('c_proveedor');
+  selectProv.innerHTML = DB.proveedores().map(p => `<option value="${p.nombre}">${p.nombre}</option>`).join('');
+  document.getElementById('c_proveedorNuevo').value = '';
+  document.getElementById('c_fecha').value = new Date().toISOString().slice(0,10);
+  document.querySelector('#tablaItemsCompra tbody').innerHTML = '';
+  document.getElementById('c_descuento').value = 0;
+  recalcularCompra();
+  document.getElementById('modalCompra').classList.add('abierto');
+}
+
+// Editar: si la compra tiene detalle de productos, reutiliza el modal de Nueva Compra
+// precargado. Si viene del SIAT (sin detalle), abre el modal simplificado de cabecera.
+function editarCompra(c) {
+  if (c.origen === 'SIAT') { abrirModalEditarSIATCompra(c); return; }
+
+  document.getElementById('c_tituloModal').textContent = 'Editar Compra ' + c.numero;
+  document.getElementById('c_editId').value = c.id;
+  const selectProv = document.getElementById('c_proveedor');
+  selectProv.innerHTML = DB.proveedores().map(p => `<option value="${p.nombre}" ${p.nombre===c.proveedorNombre?'selected':''}>${p.nombre}</option>`).join('');
+  document.getElementById('c_proveedorNuevo').value = '';
+  document.getElementById('c_tipo').value = c.tipo;
+  document.getElementById('c_fecha').value = c.fecha;
+  document.getElementById('c_descuento').value = c.descuento;
+
+  const tbody = document.querySelector('#tablaItemsCompra tbody');
+  tbody.innerHTML = '';
+  c.items.forEach(it => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><span class="codigo-chip">${it.codigo}</span><input type="hidden" class="ci-id" value="${it.id_producto}"><input type="hidden" class="ci-desc" value="${it.descripcion}"></td>
+      <td>${it.descripcion}</td>
+      <td><input type="number" step="0.01" min="0.01" value="${it.cantidad}" class="ci-cant" oninput="recalcularCompra()"></td>
+      <td><input type="number" step="0.01" value="${it.costo}" class="ci-costo" oninput="recalcularCompra()"></td>
+      <td class="text-end ci-total">${(it.cantidad*it.costo).toFixed(2)}</td>
+      <td><button class="btn-giseca btn-outline btn-icon btn-sm" onclick="this.closest('tr').remove(); recalcularCompra();">✕</button></td>`;
+    tbody.appendChild(tr);
+  });
+  recalcularCompra();
+  document.getElementById('modalCompra').classList.add('abierto');
+}
+
+function eliminarCompraConfirm(id) {
+  const c = DB.buscarCompraPorId(id);
+  const advertenciaStock = c.items.length ? ' Se revertirá el stock que había sumado esta compra.' : '';
+  if (!confirm(`¿Eliminar la compra ${c.numero}?${advertenciaStock} También se borrará su comprobante de egreso.`)) return;
+  DB.eliminarCompra(id);
+  mostrarToast('Compra eliminada', 'exito');
+  render();
+}
+
+function abrirModalEditarSIATCompra(c) {
+  document.getElementById('es_id').value = c.id;
+  document.getElementById('es_proveedor').value = c.proveedorNombre;
+  document.getElementById('es_fecha').value = c.fecha;
+  document.getElementById('es_numeroFactura').value = c.numeroFacturaSIAT || '';
+  document.getElementById('es_total').value = c.total;
+  document.getElementById('es_baseCF').value = c.baseCF || 0;
+  document.getElementById('es_creditoFiscal').value = c.creditoFiscal || 0;
+  document.getElementById('modalEditarSIATCompra').classList.add('abierto');
+}
+
+function guardarEdicionSIATCompra() {
+  const id = document.getElementById('es_id').value;
+  DB.actualizarCompra(id, {
+    proveedorNombre: document.getElementById('es_proveedor').value.trim(),
+    fecha: document.getElementById('es_fecha').value,
+    numeroFacturaSIAT: document.getElementById('es_numeroFactura').value.trim(),
+    total: parseFloat(document.getElementById('es_total').value) || 0,
+    baseCF: parseFloat(document.getElementById('es_baseCF').value) || 0,
+    creditoFiscal: parseFloat(document.getElementById('es_creditoFiscal').value) || 0,
+  }, null); // null = no tocar items/stock
+  mostrarToast('Compra SIAT actualizada', 'exito');
+  document.getElementById('modalEditarSIATCompra').classList.remove('abierto');
+  render();
+}
+
+const buscadorCompra = document.getElementById('c_buscador');
+const resultadosCompra = document.getElementById('resultadosBusquedaCompra');
+buscadorCompra.addEventListener('input', function() {
+  const termino = this.value.trim();
+  if (termino.length < 2) { resultadosCompra.innerHTML = ''; return; }
+  const encontrados = DB.buscarProductos(termino);
+  resultadosCompra.innerHTML = encontrados.map(p =>
+    `<div class="item" onclick='agregarItemCompra(${JSON.stringify(p)})'><strong>${p.codigo}</strong> — ${p.descripcion}</div>`
+  ).join('') || '<div class="item">Sin resultados</div>';
+});
+
+function agregarItemCompra(p) {
+  const tbody = document.querySelector('#tablaItemsCompra tbody');
+  const tr = document.createElement('tr');
+  tr.innerHTML = `
+    <td><span class="codigo-chip">${p.codigo}</span><input type="hidden" class="ci-id" value="${p.id}"><input type="hidden" class="ci-desc" value="${p.descripcion}"></td>
+    <td>${p.descripcion}</td>
+    <td><input type="number" step="0.01" min="0.01" value="1" class="ci-cant" oninput="recalcularCompra()"></td>
+    <td><input type="number" step="0.01" value="${p.costo}" class="ci-costo" oninput="recalcularCompra()"></td>
+    <td class="text-end ci-total">${Number(p.costo).toFixed(2)}</td>
+    <td><button class="btn-giseca btn-outline btn-icon btn-sm" onclick="this.closest('tr').remove(); recalcularCompra();">✕</button></td>`;
+  tbody.appendChild(tr);
+  resultadosCompra.innerHTML = ''; buscadorCompra.value = '';
+  recalcularCompra();
+}
+
+document.getElementById('c_descuento').addEventListener('input', recalcularCompra);
+function recalcularCompra() {
+  let subtotal = 0;
+  document.querySelectorAll('#tablaItemsCompra tbody tr').forEach(tr => {
+    const cant = parseFloat(tr.querySelector('.ci-cant').value) || 0;
+    const costo = parseFloat(tr.querySelector('.ci-costo').value) || 0;
+    const total = cant * costo;
+    tr.querySelector('.ci-total').textContent = total.toFixed(2);
+    subtotal += total;
+  });
+  const desc = parseFloat(document.getElementById('c_descuento').value) || 0;
+  document.getElementById('c_lblSubtotal').textContent = subtotal.toFixed(2);
+  document.getElementById('c_lblTotal').textContent = 'Bs ' + (subtotal - desc).toFixed(2);
+}
+
+function guardarCompra() {
+  const nuevoNombre = document.getElementById('c_proveedorNuevo').value.trim();
+  const proveedorNombre = nuevoNombre || document.getElementById('c_proveedor').value;
+  if (!proveedorNombre) { mostrarToast('Selecciona o escribe un proveedor', 'error'); return; }
+  if (nuevoNombre) DB.obtenerOCrearProveedorPorNombre(nuevoNombre);
+
+  const filas = document.querySelectorAll('#tablaItemsCompra tbody tr');
+  if (!filas.length) { mostrarToast('Agrega al menos un producto', 'error'); return; }
+
+  const items = [];
+  filas.forEach(tr => {
+    const cantidad = parseFloat(tr.querySelector('.ci-cant').value) || 0;
+    const costo = parseFloat(tr.querySelector('.ci-costo').value) || 0;
+    if (cantidad <= 0) return;
+    items.push({
+      id_producto: Number(tr.querySelector('.ci-id').value),
+      codigo: tr.querySelector('.codigo-chip').textContent,
+      descripcion: tr.querySelector('.ci-desc').value,
+      cantidad, costo,
+    });
+  });
+
+  const cabecera = {
+    tipo: document.getElementById('c_tipo').value,
+    fecha: document.getElementById('c_fecha').value,
+    proveedorNombre,
+    descuento: parseFloat(document.getElementById('c_descuento').value) || 0,
+    metodo: 'Efectivo',
+  };
+
+  const editId = document.getElementById('c_editId').value;
+  if (editId) {
+    DB.actualizarCompra(editId, cabecera, items);
+    mostrarToast('Compra actualizada', 'exito');
+  } else {
+    const compra = DB.crearCompra(cabecera, items);
+    mostrarToast(`Compra ${compra.numero} guardada. Comprobante ${compra.comprobante} generado.`, 'exito');
+  }
+  document.getElementById('modalCompra').classList.remove('abierto');
+  render();
+}
+
+// ---- Importación Libro de Compras SIAT ----
+function procesarSIATCompras() {
+  const archivo = document.getElementById('archivoSIATCompras').files[0];
+  if (!archivo) { mostrarToast('Selecciona el archivo CSV del SIAT', 'error'); return; }
+  const lector = new FileReader();
+  lector.onload = e => {
+    const filas = DB.parsearCSV(e.target.result);
+    const resultado = DB.importarComprasSIAT(filas);
+    document.getElementById('resultadoSIATCompras').innerHTML = `
+      <div style="background:var(--gc-verde-suave); color:var(--gc-verde); padding:10px; border-radius:6px; font-size:13px;">
+        ${resultado.creadas} factura(s) importada(s) correctamente.
+        ${resultado.duplicadas ? `${resultado.duplicadas} ya estaban importadas (se omitieron).` : ''}
+      </div>
+      ${resultado.errores.length ? `<div style="color:var(--gc-rojo); font-size:12px; margin-top:6px;">${resultado.errores.join('<br>')}</div>` : ''}
+    `;
+    mostrarToast(resultado.creadas + ' facturas del SIAT importadas', 'exito');
+    render();
+  };
+  lector.readAsText(archivo);
+}
+
+// ---- Importación CSV ----
+function procesarCSVCompras() {
+  const archivo = document.getElementById('c_archivoCSV').files[0];
+  if (!archivo) { mostrarToast('Selecciona un archivo CSV', 'error'); return; }
+  const lector = new FileReader();
+  lector.onload = e => {
+    const filas = DB.parsearCSV(e.target.result);
+    const resultado = DB.importarComprasCSV(filas);
+    document.getElementById('c_resultadoImportacion').innerHTML = `
+      <div class="alert" style="background:var(--gc-verde-suave); color:var(--gc-verde); padding:10px; border-radius:6px; font-size:13px;">
+        ${resultado.creadas} compra(s) importada(s) correctamente.
+      </div>
+      ${resultado.errores.length ? `<div style="color:var(--gc-rojo); font-size:12px; margin-top:6px;">${resultado.errores.join('<br>')}</div>` : ''}
+    `;
+    mostrarToast(resultado.creadas + ' compras importadas', 'exito');
+    render();
+  };
+  lector.readAsText(archivo);
+}
+
+render();
+</script>
+</body>
+</html>

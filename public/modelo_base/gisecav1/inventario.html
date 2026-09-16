@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="es" data-bs-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Inventario - GISECA SRL ERP</title>
+<link rel="stylesheet" href="css/app.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
+<script>
+(function(){
+  const tema = localStorage.getItem('giseca_tema') || 'light';
+  document.documentElement.setAttribute('data-bs-theme', tema);
+})();
+</script>
+</head>
+<body>
+<div id="contenidoPagina" style="display:none;">
+
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; flex-wrap:wrap; gap:10px;">
+        <input type="text" id="buscador" class="form-control-giseca" style="max-width:380px;" placeholder="Buscar por código, equivalente o descripción...">
+        <div style="display:flex; gap:8px;">
+          <button class="btn-giseca btn-outline" onclick="document.getElementById('modalExcel').classList.add('abierto')"><i class="bi bi-file-earmark-excel"></i> Importar Excel</button>
+          <button class="btn-giseca btn-primario" onclick="abrirModal()"><i class="bi bi-plus-lg"></i> Nuevo Producto</button>
+        </div>
+      </div>
+
+      <div class="card-giseca" style="padding:0; overflow:hidden;">
+        <table class="tabla-giseca">
+          <thead><tr><th>Código</th><th>Equivalente</th><th>Descripción</th><th>Marca</th><th>Unidad</th>
+                     <th class="text-end">Costo</th><th class="text-end">P. Venta</th><th class="text-end">Stock</th><th></th></tr></thead>
+          <tbody id="tbodyProductos"></tbody>
+        </table>
+      </div>
+      <div id="sinResultados" style="display:none; text-align:center; color:var(--gc-gris-claro); padding:40px;"><i class="bi bi-box-seam" style="font-size:30px; display:block; margin-bottom:8px; opacity:.5;"></i>Sin productos que coincidan.</div>
+
+  </div>
+
+<!-- Modal Nuevo/Editar Producto -->
+<div class="modal-giseca" id="modalProducto">
+  <div class="modal-box">
+    <h6 id="modalTitulo">Nuevo Producto</h6>
+    <input type="hidden" id="f_id">
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+      <div><label class="form-label-giseca">Código *</label><input class="form-control-giseca" id="f_codigo"></div>
+      <div><label class="form-label-giseca">Equivalente</label><input class="form-control-giseca" id="f_equivalente"></div>
+    </div>
+    <div style="margin-top:10px;"><label class="form-label-giseca">Descripción *</label><input class="form-control-giseca" id="f_descripcion"></div>
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:10px;">
+      <div><label class="form-label-giseca">Marca</label><input class="form-control-giseca" id="f_marca"></div>
+      <div><label class="form-label-giseca">Unidad</label><input class="form-control-giseca" id="f_unidad" value="PZA"></div>
+    </div>
+    <div style="display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:10px; margin-top:10px;">
+      <div><label class="form-label-giseca">Costo</label><input type="number" step="0.01" class="form-control-giseca" id="f_costo" value="0"></div>
+      <div><label class="form-label-giseca">P. Venta</label><input type="number" step="0.01" class="form-control-giseca" id="f_precio" value="0"></div>
+      <div><label class="form-label-giseca">Stock</label><input type="number" step="0.01" class="form-control-giseca" id="f_stock" value="0"></div>
+      <div><label class="form-label-giseca">Stock mín.</label><input type="number" step="0.01" class="form-control-giseca" id="f_stockMin" value="0"></div>
+    </div>
+    <div style="display:flex; gap:8px; margin-top:18px;">
+      <button class="btn-giseca btn-primario" onclick="guardarProducto()">Guardar</button>
+      <button class="btn-giseca btn-outline" onclick="cerrarModal()">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Importar Excel -->
+<div class="modal-giseca" id="modalExcel">
+  <div class="modal-box">
+    <h6><i class="bi bi-file-earmark-excel" style="color:var(--gc-verde);"></i> Importar Inventario desde Excel</h6>
+    <p style="font-size:12.5px; color:var(--gc-gris);">
+      Columnas esperadas (primera fila del Excel): <code>Codigo, Equivalente, Marca, Descripcion, Unidad, Costo, PrecioVenta, Stock, StockMinimo</code>.
+      Si el código ya existe, se <strong>actualiza</strong> el producto y el stock del Excel se <strong>suma</strong> al actual (pensado para reposición).
+      Si no existe, se <strong>crea</strong> automáticamente.
+    </p>
+    <button class="btn-giseca btn-outline btn-sm" onclick="descargarPlantillaExcel()" style="margin-bottom:12px;">
+      <i class="bi bi-download"></i> Descargar plantilla de ejemplo (.xlsx)
+    </button>
+    <input type="file" id="archivoExcel" accept=".xlsx,.xls" class="form-control-giseca" style="margin-bottom:12px;">
+    <div id="resultadoImportacionExcel"></div>
+    <div style="display:flex; gap:8px; margin-top:14px;">
+      <button class="btn-giseca btn-primario" onclick="procesarExcelInventario()"><i class="bi bi-upload"></i> Importar</button>
+      <button class="btn-giseca btn-outline" onclick="document.getElementById('modalExcel').classList.remove('abierto')">Cerrar</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="js/data.js"></script>
+<script src="js/layout.js"></script>
+<script>
+renderLayout('inventario', 'Inventario');
+
+function render() {
+  const termino = document.getElementById('buscador').value;
+  const lista = termino ? DB.buscarProductos(termino) : DB.productos().filter(p => p.activo !== false);
+  const tbody = document.getElementById('tbodyProductos');
+
+  tbody.innerHTML = lista.map(p => `
+    <tr class="${p.stock <= p.stockMin ? 'alerta' : ''}">
+      <td><span class="codigo-chip">${p.codigo}</span></td>
+      <td>${p.equivalente ? `<span class="codigo-chip equivalente">${p.equivalente}</span>` : '—'}</td>
+      <td>${p.descripcion}</td>
+      <td>${p.marca || '—'}</td>
+      <td>${p.unidad}</td>
+      <td class="text-end">${formatoMoneda(p.costo)}</td>
+      <td class="text-end">${formatoMoneda(p.precio)}</td>
+      <td class="text-end" style="${p.stock <= p.stockMin ? 'color:var(--rojo); font-weight:700;' : ''}">${p.stock}</td>
+      <td class="text-end"><button class="btn-giseca btn-outline btn-icon btn-sm" onclick="editarProducto(${p.id})"><i class="bi bi-pencil"></i></button></td>
+    </tr>
+  `).join('');
+
+  document.getElementById('sinResultados').style.display = lista.length ? 'none' : 'block';
+}
+
+document.getElementById('buscador').addEventListener('input', render);
+
+function abrirModal() {
+  document.getElementById('modalTitulo').textContent = 'Nuevo Producto';
+  ['f_id','f_codigo','f_equivalente','f_descripcion','f_marca'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('f_unidad').value = 'PZA';
+  ['f_costo','f_precio','f_stock','f_stockMin'].forEach(id => document.getElementById(id).value = 0);
+  document.getElementById('modalProducto').classList.add('abierto');
+}
+
+function editarProducto(id) {
+  const p = DB.productos().find(x => x.id === id);
+  if (!p) return;
+  document.getElementById('modalTitulo').textContent = 'Editar Producto';
+  document.getElementById('f_id').value = p.id;
+  document.getElementById('f_codigo').value = p.codigo;
+  document.getElementById('f_equivalente').value = p.equivalente || '';
+  document.getElementById('f_descripcion').value = p.descripcion;
+  document.getElementById('f_marca').value = p.marca || '';
+  document.getElementById('f_unidad').value = p.unidad;
+  document.getElementById('f_costo').value = p.costo;
+  document.getElementById('f_precio').value = p.precio;
+  document.getElementById('f_stock').value = p.stock;
+  document.getElementById('f_stockMin').value = p.stockMin;
+  document.getElementById('modalProducto').classList.add('abierto');
+}
+
+function cerrarModal() { document.getElementById('modalProducto').classList.remove('abierto'); }
+
+function guardarProducto() {
+  const codigo = document.getElementById('f_codigo').value.trim();
+  const descripcion = document.getElementById('f_descripcion').value.trim();
+  if (!codigo || !descripcion) { mostrarToast('Código y descripción son obligatorios', 'error'); return; }
+
+  const datos = {
+    codigo, descripcion,
+    equivalente: document.getElementById('f_equivalente').value.trim(),
+    marca: document.getElementById('f_marca').value.trim(),
+    unidad: document.getElementById('f_unidad').value.trim() || 'PZA',
+    costo: parseFloat(document.getElementById('f_costo').value) || 0,
+    precio: parseFloat(document.getElementById('f_precio').value) || 0,
+    stock: parseFloat(document.getElementById('f_stock').value) || 0,
+    stockMin: parseFloat(document.getElementById('f_stockMin').value) || 0,
+  };
+
+  const id = document.getElementById('f_id').value;
+  if (id) {
+    DB.actualizarProducto(Number(id), datos);
+    mostrarToast('Producto actualizado', 'exito');
+  } else {
+    DB.crearProducto(datos);
+    mostrarToast('Producto creado', 'exito');
+  }
+  cerrarModal();
+  render();
+}
+
+render();
+
+// ---- Importación Excel (SheetJS) ----
+function libreriaExcelDisponible() {
+  if (typeof XLSX === 'undefined') {
+    document.getElementById('resultadoImportacionExcel').innerHTML =
+      `<div style="background:var(--gc-rojo-suave); color:var(--gc-rojo); padding:10px; border-radius:6px; font-size:12.5px;">
+        <i class="bi bi-wifi-off"></i> No se pudo cargar el lector de Excel (¿sin conexión a internet?). Vuelve a intentarlo cuando tengas internet, o usa el formulario "Nuevo Producto" para cargar manualmente.
+      </div>`;
+    return false;
+  }
+  return true;
+}
+
+function procesarExcelInventario() {
+  if (!libreriaExcelDisponible()) return;
+  const archivo = document.getElementById('archivoExcel').files[0];
+  if (!archivo) { mostrarToast('Selecciona un archivo Excel', 'error'); return; }
+
+  const lector = new FileReader();
+  lector.onload = e => {
+    try {
+      const datos = new Uint8Array(e.target.result);
+      const libro = XLSX.read(datos, { type: 'array' });
+      const primeraHoja = libro.Sheets[libro.SheetNames[0]];
+      const filas = XLSX.utils.sheet_to_json(primeraHoja, { defval: '' });
+
+      const resultado = DB.importarProductosExcel(filas);
+      document.getElementById('resultadoImportacionExcel').innerHTML = `
+        <div style="background:var(--gc-verde-suave); color:var(--gc-verde); padding:10px; border-radius:6px; font-size:13px;">
+          ${resultado.creados} producto(s) nuevo(s), ${resultado.actualizados} actualizado(s).
+        </div>
+        ${resultado.errores.length ? `<div style="color:var(--gc-rojo); font-size:12px; margin-top:6px;">${resultado.errores.join('<br>')}</div>` : ''}
+      `;
+      mostrarToast(`Importación completa: ${resultado.creados} nuevos, ${resultado.actualizados} actualizados`, 'exito');
+      render();
+    } catch (err) {
+      document.getElementById('resultadoImportacionExcel').innerHTML =
+        `<div style="background:var(--gc-rojo-suave); color:var(--gc-rojo); padding:10px; border-radius:6px; font-size:12.5px;">
+          Error leyendo el archivo: ${err.message}. Verifica que sea un .xlsx válido con los encabezados correctos.
+        </div>`;
+    }
+  };
+  lector.readAsArrayBuffer(archivo);
+}
+
+function descargarPlantillaExcel() {
+  if (!libreriaExcelDisponible()) return;
+  const datosEjemplo = [
+    { Codigo: 'LF9009', Equivalente: 'P550949', Marca: 'Fleetguard', Descripcion: 'Filtro de aceite Fleetguard para motor Cummins', Unidad: 'PZA', Costo: 45, PrecioVenta: 89.90, Stock: 20, StockMinimo: 10 },
+    { Codigo: 'NUEVO-001', Equivalente: '', Marca: 'Tu marca', Descripcion: 'Descripción del producto', Unidad: 'PZA', Costo: 0, PrecioVenta: 0, Stock: 0, StockMinimo: 0 },
+  ];
+  const hoja = XLSX.utils.json_to_sheet(datosEjemplo);
+  const libro = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(libro, hoja, 'Inventario');
+  XLSX.writeFile(libro, 'plantilla_inventario_giseca.xlsx');
+}
+</script>
+</body>
+</html>

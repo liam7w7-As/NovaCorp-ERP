@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="es" data-bs-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Configuración - GISECA SRL ERP</title>
+<link rel="stylesheet" href="css/app.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
+<style>
+  .dropzone{ border:2px dashed var(--gris-metal-claro); border-radius:10px; padding:34px 20px; text-align:center; cursor:pointer; background:#FAFBFC; }
+  .dropzone:hover, .dropzone.dragover{ border-color:var(--naranja); background:var(--naranja-suave); }
+  .dropzone i{ font-size:32px; color:var(--gris-metal-claro); }
+  .preview-frame{ border:1px solid var(--borde); border-radius:8px; overflow:hidden; background:#fff; min-height:160px; display:flex; align-items:center; justify-content:center; }
+  .preview-frame img{ width:100%; display:block; }
+  .preview-frame embed{ width:100%; height:300px; }
+</style>
+<script>
+(function(){
+  const tema = localStorage.getItem('giseca_tema') || 'light';
+  document.documentElement.setAttribute('data-bs-theme', tema);
+})();
+</script>
+</head>
+<body>
+<div id="contenidoPagina" style="display:none;">
+
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:18px; align-items:start;">
+        <div class="card-giseca">
+          <h6>Membretado de Cotizaciones</h6>
+          <p style="font-size:12.5px; color:var(--gris-metal);">Sube tu papelería oficial (JPG o PDF). Se aplicará automáticamente al generar cualquier proforma en PDF.</p>
+
+          <div class="dropzone" id="dropzone" onclick="document.getElementById('inputMembrete').click()">
+            <i class="bi bi-cloud-arrow-up"></i>
+            <div style="margin-top:8px; font-weight:600;">Arrastra tu archivo aquí o haz clic para seleccionar</div>
+            <div style="font-size:12px; color:var(--gris-metal-claro);">JPG, PNG o PDF — máx. 5 MB</div>
+          </div>
+          <input type="file" id="inputMembrete" accept=".jpg,.jpeg,.png,.pdf" style="display:none;">
+
+          <div id="estadoActual" style="margin-top:16px; display:none;">
+            <div class="preview-frame" id="previewFrame"></div>
+            <div style="display:flex; gap:8px; margin-top:12px;">
+              <button class="btn-giseca btn-primario btn-sm" onclick="document.getElementById('inputMembrete').click()">Reemplazar</button>
+              <button class="btn-giseca btn-outline btn-sm" onclick="quitar()">Quitar</button>
+            </div>
+          </div>
+          <div id="sinMembrete" style="margin-top:14px; font-size:12.5px; color:var(--gris-metal-claro);">
+            Sin membretado cargado — las proformas usan el encabezado de texto por defecto.
+          </div>
+        </div>
+
+        <div class="card-giseca">
+          <h6>Datos guardados en este navegador</h6>
+          <p style="font-size:12.5px; color:var(--gris-metal);">Este sistema funciona sin servidor: toda la información vive en el almacenamiento local de este navegador.</p>
+          <div id="resumenDatos" style="font-size:13px; line-height:2;"></div>
+          <button class="btn-giseca btn-outline btn-sm" style="margin-top:14px;" onclick="reiniciarDatos()"><i class="bi bi-arrow-counterclockwise"></i> Borrar todo y reiniciar con datos de ejemplo</button>
+        </div>
+      </div>
+
+  </div>
+
+<script src="js/data.js"></script>
+<script src="js/layout.js"></script>
+<script>
+renderLayout('configuracion', 'Configuración');
+
+const dropzone = document.getElementById('dropzone');
+const input = document.getElementById('inputMembrete');
+
+['dragenter','dragover'].forEach(ev => dropzone.addEventListener(ev, e => { e.preventDefault(); dropzone.classList.add('dragover'); }));
+['dragleave','drop'].forEach(ev => dropzone.addEventListener(ev, e => { e.preventDefault(); dropzone.classList.remove('dragover'); }));
+dropzone.addEventListener('drop', e => { if (e.dataTransfer.files[0]) manejarArchivo(e.dataTransfer.files[0]); });
+input.addEventListener('change', e => { if (e.target.files[0]) manejarArchivo(e.target.files[0]); });
+
+function manejarArchivo(file) {
+  const tipo = file.type === 'application/pdf' ? 'pdf' : 'image';
+  const lector = new FileReader();
+  lector.onload = e => { DB.guardarMembretado({ tipo, dataUrl: e.target.result }); mostrarToast('Membretado guardado', 'exito'); render(); };
+  lector.readAsDataURL(file);
+}
+
+function quitar() { DB.quitarMembretado(); mostrarToast('Membretado eliminado', 'exito'); render(); }
+
+function render() {
+  const m = DB.membretado();
+  document.getElementById('estadoActual').style.display = m ? 'block' : 'none';
+  document.getElementById('sinMembrete').style.display = m ? 'none' : 'block';
+  if (m) {
+    document.getElementById('previewFrame').innerHTML = m.tipo === 'image'
+      ? `<img src="${m.dataUrl}">` : `<embed src="${m.dataUrl}" type="application/pdf">`;
+  }
+
+  document.getElementById('resumenDatos').innerHTML = `
+    <div>📦 Productos: <strong>${DB.productos().length}</strong></div>
+    <div>👥 Clientes: <strong>${DB.clientes().length}</strong></div>
+    <div>📄 Proformas: <strong>${DB.proformas().length}</strong></div>
+  `;
+}
+
+function reiniciarDatos() {
+  if (!confirm('Esto borrará TODOS los datos guardados en este navegador (productos, clientes, proformas). ¿Continuar?')) return;
+  Object.values(DB.KEYS).forEach(k => localStorage.removeItem(k));
+  DB.sembrarSiVacio();
+  mostrarToast('Datos reiniciados', 'exito');
+  render();
+}
+
+render();
+</script>
+</body>
+</html>

@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="es" data-bs-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nueva Proforma - GISECA SRL ERP</title>
+<link rel="stylesheet" href="css/app.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
+<style>
+  #resultadosBusqueda{ position:absolute; background:#fff; border:1px solid var(--borde); border-radius:8px; box-shadow:0 10px 30px rgba(0,0,0,.12); width:520px; max-height:260px; overflow-y:auto; z-index:50; margin-top:4px; }
+  #resultadosBusqueda .item{ padding:10px 14px; cursor:pointer; border-bottom:1px solid var(--borde); font-size:13px; }
+  #resultadosBusqueda .item:hover{ background:var(--naranja-suave); }
+  #tablaProductos input{ border:1px solid var(--borde); border-radius:4px; padding:5px 6px; font-size:12.5px; width:100%; }
+  .seccion-form h6{ margin:0 0 14px; border-bottom:2px solid var(--naranja); padding-bottom:6px; display:inline-block; font-weight:700; }
+  .seccion-form{ margin-bottom:18px; }
+  .grid-3{ display:grid; grid-template-columns:repeat(3,1fr); gap:14px; }
+</style>
+<script>
+(function(){
+  const tema = localStorage.getItem('giseca_tema') || 'light';
+  document.documentElement.setAttribute('data-bs-theme', tema);
+})();
+</script>
+</head>
+<body>
+<div id="contenidoPagina" style="display:none;">
+
+      <div class="card-giseca seccion-form">
+        <h6>Datos Generales</h6>
+        <div class="grid-3">
+          <div>
+            <label class="form-label-giseca">Cliente *</label>
+            <select id="idCliente" class="form-control-giseca"></select>
+          </div>
+          <div><label class="form-label-giseca">Persona de contacto</label><input id="personaContacto" class="form-control-giseca"></div>
+          <div><label class="form-label-giseca">Teléfono</label><input id="telefonoContacto" class="form-control-giseca"></div>
+          <div><label class="form-label-giseca">Fecha de emisión</label><input type="date" id="fechaEmision" class="form-control-giseca"></div>
+          <div><label class="form-label-giseca">Fecha de validez</label><input type="date" id="fechaValidez" class="form-control-giseca"></div>
+        </div>
+      </div>
+
+      <div class="card-giseca seccion-form" style="position:relative;">
+        <h6>Productos</h6>
+        <input type="text" id="buscador" class="form-control-giseca" placeholder="Buscar por código, equivalente o descripción..." style="max-width:520px;">
+        <div id="resultadosBusqueda"></div>
+
+        <div style="overflow-x:auto; margin-top:14px;">
+        <table class="tabla-giseca" id="tablaProductos">
+          <thead><tr><th>Código</th><th>Descripción</th><th>Marca</th><th style="width:80px">Cant.</th><th style="width:100px">P. Unit.</th><th style="width:100px">Total</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+        </div>
+
+        <div style="display:flex; justify-content:flex-end; margin-top:14px;">
+          <div style="width:300px;">
+            <div style="display:flex; justify-content:space-between; padding:4px 0;"><span>Subtotal:</span><strong id="lblSubtotal">0.00</strong></div>
+            <div style="display:flex; justify-content:space-between; align-items:center; padding:4px 0;">
+              <span>Descuento:</span>
+              <input type="number" id="inputDescuento" value="0" style="width:100px; border:1px solid var(--borde); border-radius:4px; padding:5px; text-align:right;">
+            </div>
+            <div style="display:flex; justify-content:space-between; padding:8px 0; border-top:2px solid var(--azul-acero); margin-top:6px;">
+              <strong>TOTAL GENERAL:</strong>
+              <strong id="lblTotal" style="color:var(--naranja-oscuro);">Bs 0.00</strong>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card-giseca seccion-form">
+        <h6>Condiciones Comerciales</h6>
+        <div class="grid-3">
+          <div><label class="form-label-giseca">Tiempo de entrega</label><input id="tiempoEntrega" class="form-control-giseca" placeholder="Ej: 24-48 horas"></div>
+          <div><label class="form-label-giseca">Condiciones de pago</label><input id="condicionesPago" class="form-control-giseca" placeholder="Ej: 50% anticipo"></div>
+          <div><label class="form-label-giseca">Garantía</label><input id="garantia" class="form-control-giseca" placeholder="Ej: 6 meses"></div>
+        </div>
+        <div style="margin-top:14px;"><label class="form-label-giseca">Observaciones</label><textarea id="observaciones" class="form-control-giseca" rows="2"></textarea></div>
+      </div>
+
+      <div class="card-giseca seccion-form">
+        <h6>Reserva de Stock</h6>
+        <label style="display:flex; align-items:center; gap:8px; font-size:13.5px;">
+          <input type="checkbox" id="reservaStock"> Reservar stock para esta proforma (solo anota la intención; el stock real se descuenta al Convertir a Venta)
+        </label>
+      </div>
+
+      <button class="btn-giseca btn-primario" style="padding:11px 22px;" onclick="guardarProforma()"><i class="bi bi-save"></i> Guardar Proforma</button>
+      <a href="proformas-listar.html" class="btn-giseca btn-outline" style="padding:11px 22px;">Cancelar</a>
+
+  </div>
+
+<script src="js/data.js"></script>
+<script src="js/layout.js"></script>
+<script>
+renderLayout('proformas', 'Nueva Proforma');
+
+// Cargar clientes en el select
+const selectCliente = document.getElementById('idCliente');
+selectCliente.innerHTML = '<option value="">-- Seleccionar cliente --</option>' +
+  DB.clientes().map(c => `<option value="${c.id}">${c.nombre} (${c.nit||'s/n'})</option>`).join('');
+
+// Fechas por defecto
+const hoy = new Date();
+document.getElementById('fechaEmision').value = hoy.toISOString().slice(0,10);
+const validez = new Date(hoy); validez.setDate(validez.getDate() + 15);
+document.getElementById('fechaValidez').value = validez.toISOString().slice(0,10);
+
+// Buscador de productos
+const buscador = document.getElementById('buscador');
+const resultadosDiv = document.getElementById('resultadosBusqueda');
+buscador.addEventListener('input', function() {
+  const termino = this.value.trim();
+  if (termino.length < 2) { resultadosDiv.innerHTML = ''; return; }
+  const resultados = DB.buscarProductos(termino);
+  resultadosDiv.innerHTML = resultados.map(p =>
+    `<div class="item" onclick='agregarProducto(${JSON.stringify(p)})'>
+       <strong>${p.codigo}</strong> — ${p.descripcion} <span style="color:var(--gris-metal-claro)">(${p.marca||''}) Stock: ${p.stock}</span>
+     </div>`
+  ).join('') || '<div class="item">Sin resultados</div>';
+});
+
+function agregarProducto(p) {
+  const tbody = document.querySelector('#tablaProductos tbody');
+  const tr = document.createElement('tr');
+  tr.innerHTML = `
+    <td><span class="codigo-chip">${p.codigo}</span><input type="hidden" class="f-id" value="${p.id}"><input type="hidden" class="f-equiv" value="${p.equivalente||''}"></td>
+    <td><input value="${p.descripcion}" class="f-desc"></td>
+    <td>${p.marca||''}</td>
+    <td><input type="number" step="0.01" min="0.01" value="1" class="cantidad" oninput="recalcular()"></td>
+    <td><input type="number" step="0.01" value="${p.precio}" class="precio" oninput="recalcular()"></td>
+    <td class="text-end total-linea">${Number(p.precio).toFixed(2)}</td>
+    <td><button class="btn-giseca btn-outline btn-icon btn-sm" onclick="this.closest('tr').remove(); recalcular();">✕</button></td>`;
+  tbody.appendChild(tr);
+  resultadosDiv.innerHTML = ''; buscador.value = '';
+  recalcular();
+}
+
+document.getElementById('inputDescuento').addEventListener('input', recalcular);
+
+function recalcular() {
+  let subtotal = 0;
+  document.querySelectorAll('#tablaProductos tbody tr').forEach(tr => {
+    const cant = parseFloat(tr.querySelector('.cantidad').value) || 0;
+    const precio = parseFloat(tr.querySelector('.precio').value) || 0;
+    const total = cant * precio;
+    tr.querySelector('.total-linea').textContent = total.toFixed(2);
+    subtotal += total;
+  });
+  const desc = parseFloat(document.getElementById('inputDescuento').value) || 0;
+  document.getElementById('lblSubtotal').textContent = subtotal.toFixed(2);
+  document.getElementById('lblTotal').textContent = 'Bs ' + (subtotal - desc).toFixed(2);
+}
+
+function guardarProforma() {
+  const idCliente = Number(selectCliente.value);
+  if (!idCliente) { mostrarToast('Selecciona un cliente', 'error'); return; }
+
+  const filas = document.querySelectorAll('#tablaProductos tbody tr');
+  if (!filas.length) { mostrarToast('Agrega al menos un producto', 'error'); return; }
+
+  const items = [];
+  let subtotal = 0;
+  filas.forEach(tr => {
+    const cantidad = parseFloat(tr.querySelector('.cantidad').value) || 0;
+    const precio = parseFloat(tr.querySelector('.precio').value) || 0;
+    if (cantidad <= 0) return;
+    items.push({
+      id_producto: Number(tr.querySelector('.f-id').value),
+      codigo: tr.querySelector('.codigo-chip').textContent,
+      equivalente: tr.querySelector('.f-equiv').value,
+      descripcion: tr.querySelector('.f-desc').value,
+      marca: tr.children[2].textContent,
+      unidad: 'PZA',
+      cantidad, precio,
+    });
+    subtotal += cantidad * precio;
+  });
+
+  const descuento = parseFloat(document.getElementById('inputDescuento').value) || 0;
+  const cliente = DB.clientes().find(c => c.id === idCliente);
+
+  const proforma = {
+    fecha: document.getElementById('fechaEmision').value,
+    validez: document.getElementById('fechaValidez').value,
+    idCliente, clienteNombre: cliente.nombre,
+    telefono: document.getElementById('telefonoContacto').value,
+    contacto: document.getElementById('personaContacto').value,
+    items, subtotal, descuento, total: subtotal - descuento,
+    entrega: document.getElementById('tiempoEntrega').value,
+    condPago: document.getElementById('condicionesPago').value,
+    garantia: document.getElementById('garantia').value,
+    obs: document.getElementById('observaciones').value,
+    reservaStock: document.getElementById('reservaStock').checked,
+    estado: 'BORRADOR',
+  };
+
+  const creada = DB.crearProforma(proforma);
+  mostrarToast('Proforma ' + creada.numero + ' creada', 'exito');
+  setTimeout(() => window.location.href = 'proformas-ver.html?id=' + creada.id, 500);
+}
+</script>
+</body>
+</html>

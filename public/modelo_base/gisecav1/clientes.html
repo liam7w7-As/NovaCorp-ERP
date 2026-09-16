@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="es" data-bs-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Clientes - GISECA SRL ERP</title>
+<link rel="stylesheet" href="css/app.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
+<script>
+(function(){
+  const tema = localStorage.getItem('giseca_tema') || 'light';
+  document.documentElement.setAttribute('data-bs-theme', tema);
+})();
+</script>
+</head>
+<body>
+<div id="contenidoPagina" style="display:none;">
+
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+        <input type="text" id="buscador" class="form-control-giseca" style="max-width:340px;" placeholder="Buscar por nombre o NIT/CI...">
+        <button class="btn-giseca btn-primario" onclick="abrirModal()"><i class="bi bi-plus-lg"></i> Nuevo Cliente</button>
+      </div>
+
+      <div style="display:grid; grid-template-columns:1.1fr 1fr; gap:18px;">
+        <div class="card-giseca" style="padding:0; overflow:hidden; align-self:start;">
+          <table class="tabla-giseca">
+            <thead><tr><th>Cliente</th><th>NIT/CI</th><th>Teléfono</th><th></th></tr></thead>
+            <tbody id="tbodyClientes"></tbody>
+          </table>
+        </div>
+        <div id="fichaCliente"></div>
+      </div>
+
+  </div>
+
+<div class="modal-giseca" id="modalCliente">
+  <div class="modal-box">
+    <h6>Nuevo Cliente</h6>
+    <div style="display:grid; gap:10px;">
+      <div><label class="form-label-giseca">Nombre / Razón social *</label><input class="form-control-giseca" id="f_nombre"></div>
+      <div><label class="form-label-giseca">NIT / CI</label><input class="form-control-giseca" id="f_nit"></div>
+      <div><label class="form-label-giseca">Teléfono</label><input class="form-control-giseca" id="f_telefono"></div>
+      <div><label class="form-label-giseca">Correo</label><input class="form-control-giseca" id="f_correo"></div>
+      <div><label class="form-label-giseca">Persona de contacto</label><input class="form-control-giseca" id="f_contacto"></div>
+    </div>
+    <div style="display:flex; gap:8px; margin-top:16px;">
+      <button class="btn-giseca btn-primario" onclick="guardarCliente()">Guardar</button>
+      <button class="btn-giseca btn-outline" onclick="cerrarModal()">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<script src="js/data.js"></script>
+<script src="js/layout.js"></script>
+<script>
+renderLayout('clientes', 'Clientes');
+let clienteSeleccionado = null;
+
+function render() {
+  const termino = document.getElementById('buscador').value.toLowerCase();
+  let lista = DB.clientes();
+  if (termino) lista = lista.filter(c => c.nombre.toLowerCase().includes(termino) || (c.nit||'').includes(termino));
+
+  document.getElementById('tbodyClientes').innerHTML = lista.map(c => `
+    <tr style="cursor:pointer;" onclick="verFicha(${c.id})">
+      <td><strong>${c.nombre}</strong></td><td>${c.nit || '—'}</td><td>${c.telefono || '—'}</td>
+      <td><i class="bi bi-chevron-right" style="color:var(--gris-metal-claro);"></i></td>
+    </tr>
+  `).join('') || '<tr><td colspan="4" class="text-muted small">Sin clientes registrados.</td></tr>';
+
+  if (clienteSeleccionado) verFicha(clienteSeleccionado);
+}
+
+function verFicha(id) {
+  clienteSeleccionado = id;
+  const c = DB.clientes().find(x => x.id === id);
+  if (!c) return;
+  const proformasCliente = DB.proformas().filter(p => p.idCliente === id);
+
+  document.getElementById('fichaCliente').innerHTML = `
+    <div class="card-giseca" style="margin-bottom:14px;">
+      <h6>${c.nombre}</h6>
+      <div style="font-size:13px; color:var(--gris-metal); line-height:1.9;">
+        <div><strong>NIT/CI:</strong> ${c.nit || '—'}</div>
+        <div><strong>Dirección:</strong> ${c.direccion || '—'}</div>
+        <div><strong>Correo:</strong> ${c.correo || '—'}</div>
+        <div><strong>Contacto:</strong> ${c.contacto || '—'}</div>
+      </div>
+    </div>
+    <div class="card-giseca">
+      <h6>Historial de proformas (${proformasCliente.length})</h6>
+      <table class="tabla-giseca"><tbody>
+        ${proformasCliente.length ? proformasCliente.map(p => `
+          <tr><td><a href="proformas-ver.html?id=${p.id}"><span class="codigo-chip">${p.numero}</span></a></td>
+              <td>${p.fecha}</td><td class="text-end">Bs ${formatoMoneda(p.total)}</td>
+              <td><span class="estado estado-${p.estado.toLowerCase()}">${p.estado}</span></td></tr>
+        `).join('') : '<tr><td class="text-muted small">Sin proformas registradas.</td></tr>'}
+      </tbody></table>
+    </div>`;
+}
+
+document.getElementById('buscador').addEventListener('input', render);
+function abrirModal() {
+  ['f_nombre','f_nit','f_telefono','f_correo','f_contacto'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('modalCliente').classList.add('abierto');
+}
+function cerrarModal() { document.getElementById('modalCliente').classList.remove('abierto'); }
+
+function guardarCliente() {
+  const nombre = document.getElementById('f_nombre').value.trim();
+  if (!nombre) { mostrarToast('El nombre es obligatorio', 'error'); return; }
+  DB.crearCliente({
+    nombre,
+    nit: document.getElementById('f_nit').value.trim(),
+    telefono: document.getElementById('f_telefono').value.trim(),
+    correo: document.getElementById('f_correo').value.trim(),
+    contacto: document.getElementById('f_contacto').value.trim(),
+    direccion: '',
+  });
+  mostrarToast('Cliente creado', 'exito');
+  cerrarModal();
+  render();
+}
+
+render();
+</script>
+</body>
+</html>

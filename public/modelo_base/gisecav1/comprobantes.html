@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="es" data-bs-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Comprobantes - GISECA SRL ERP</title>
+<link rel="stylesheet" href="css/app.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
+<style>
+  .comprobante-doc{ background:var(--gc-superficie); border:1px solid var(--gc-borde); border-radius:10px; padding:26px; max-width:480px; margin:0 auto; }
+  .comprobante-doc .tipo-badge{ display:inline-block; padding:4px 12px; border-radius:20px; font-weight:700; font-size:12px; }
+  .comprobante-doc .monto{ font-size:32px; font-weight:800; text-align:center; margin:20px 0; }
+  .fila-pago{ display:flex; justify-content:space-between; align-items:center; padding:6px 0; border-bottom:1px solid var(--gc-borde); font-size:12.5px; }
+  .fila-pago:last-child{ border-bottom:none; }
+  .barra-saldo{ height:6px; border-radius:4px; background:var(--gc-borde); overflow:hidden; margin-top:6px; }
+  .barra-saldo .relleno{ height:100%; background:var(--gc-verde); }
+
+  /* ---- Formato formal tipo comprobante contable (imprimible) ---- */
+  .comprobante-formal{ background:#fff; border:1px solid var(--gc-borde); border-radius:6px; overflow:hidden; font-size:12.5px; color:#222; max-width:480px; margin:0 auto; }
+  .comprobante-formal .banner{ background:#5f6368; color:#fff; padding:14px 18px; text-align:center; }
+  .comprobante-formal .banner .empresa{ font-weight:800; font-size:14px; letter-spacing:.3px; }
+  .comprobante-formal .banner .tipo{ font-size:12px; font-weight:600; margin-top:2px; }
+  .comprobante-formal .cuerpo{ padding:16px 18px; }
+  .comprobante-formal .fila-campos{ display:grid; grid-template-columns:1fr 1fr; gap:8px 16px; padding:9px 0; border-bottom:1px solid var(--gc-borde); }
+  .comprobante-formal .campo .etiqueta{ font-size:10px; font-weight:700; color:var(--gc-gris); text-transform:uppercase; letter-spacing:.3px; }
+  .comprobante-formal .campo .valor{ font-size:12.5px; margin-top:2px; word-break:break-word; }
+  .comprobante-formal .caja-monto{ background:var(--gc-fondo); border:1px solid var(--gc-borde); border-radius:4px; padding:10px 14px; margin:14px 0; }
+  .comprobante-formal .caja-monto .fila-monto{ display:flex; justify-content:space-between; align-items:baseline; }
+  .comprobante-formal .caja-monto .etq{ font-size:10.5px; font-weight:700; color:var(--gc-gris); text-transform:uppercase; }
+  .comprobante-formal .caja-monto .num{ font-size:17px; font-weight:800; }
+  .comprobante-formal .caja-monto .letras{ font-size:10px; color:var(--gc-gris); margin-top:3px; }
+  .comprobante-formal .caja-concepto{ border:1px solid var(--gc-borde); border-radius:4px; padding:8px 12px; margin-bottom:14px; }
+  .comprobante-formal .caja-concepto .etq{ font-size:10px; font-weight:700; color:var(--gc-gris); text-transform:uppercase; margin-bottom:2px; }
+  .comprobante-formal .desglose-formal{ margin-bottom:14px; }
+  .comprobante-formal .desglose-formal table{ width:100%; font-size:11px; border-collapse:collapse; }
+  .comprobante-formal .desglose-formal th{ text-align:left; font-size:9.5px; text-transform:uppercase; color:var(--gc-gris); padding:4px 6px; border-bottom:1px solid var(--gc-borde); }
+  .comprobante-formal .desglose-formal td{ padding:5px 6px; border-bottom:1px solid var(--gc-borde); }
+  .comprobante-formal .firmas{ display:grid; grid-template-columns:1fr 1fr; gap:20px; margin-top:40px; text-align:center; font-size:11px; }
+  .comprobante-formal .firmas .linea{ border-top:1px solid #333; padding-top:5px; }
+
+  .gc-fila-lista-detalle{ display:grid; grid-template-columns:1.2fr 1fr; gap:18px; }
+  .gc-columna-detalle{ width:100%; }
+
+  /* ---- Impresión: una hoja tamaño carta completa por comprobante ---- */
+  @page{ size: letter; margin: 1.6cm; }
+  @media print{
+    body{ background:#fff; }
+    .gc-fila-lista-detalle{ display:block; }
+    .gc-columna-detalle{ width:100%; }
+    .comprobante-formal{
+      max-width:100%; width:100%; margin:0; border:none; border-radius:0;
+      font-size:14px; min-height:24cm; display:flex; flex-direction:column;
+    }
+    .comprobante-formal .banner{ padding:26px 30px; }
+    .comprobante-formal .banner .empresa{ font-size:24px; }
+    .comprobante-formal .banner .tipo{ font-size:17px; margin-top:4px; }
+    .comprobante-formal .cuerpo{ padding:34px 40px; flex-grow:1; display:flex; flex-direction:column; }
+    .comprobante-formal .fila-campos{ padding:14px 0; }
+    .comprobante-formal .campo .etiqueta{ font-size:11.5px; }
+    .comprobante-formal .campo .valor{ font-size:15px; margin-top:3px; }
+    .comprobante-formal .caja-monto{ padding:18px 22px; margin:24px 0; }
+    .comprobante-formal .caja-monto .etq{ font-size:12px; }
+    .comprobante-formal .caja-monto .num{ font-size:26px; }
+    .comprobante-formal .caja-monto .letras{ font-size:13px; margin-top:6px; }
+    .comprobante-formal .caja-concepto{ padding:14px 18px; margin-bottom:20px; }
+    .comprobante-formal .caja-concepto .etq{ font-size:11px; }
+    .comprobante-formal .desglose-formal table{ font-size:13px; }
+    .comprobante-formal .desglose-formal th{ font-size:11px; padding:8px; }
+    .comprobante-formal .desglose-formal td{ padding:9px 8px; }
+    .comprobante-formal .firmas{ margin-top:auto; padding-top:80px; font-size:13px; }
+    .comprobante-formal .firmas .linea{ padding-top:8px; }
+  }
+</style>
+<script>
+(function(){
+  const tema = localStorage.getItem('giseca_tema') || 'light';
+  document.documentElement.setAttribute('data-bs-theme', tema);
+})();
+</script>
+</head>
+<body>
+<div id="contenidoPagina" style="display:none;">
+
+  <div class="no-imprimir" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; flex-wrap:wrap; gap:10px;">
+    <div style="display:flex; gap:8px;">
+      <select id="filtroTipo" class="form-control-giseca" style="width:170px;">
+        <option value="">Todos</option>
+        <option value="INGRESO">Ingresos</option>
+        <option value="EGRESO">Egresos</option>
+      </select>
+      <input type="text" id="buscador" class="form-control-giseca" style="width:220px;" placeholder="Buscar N° o concepto...">
+    </div>
+    <button class="btn-giseca btn-primario" onclick="abrirModalNuevo()"><i class="bi bi-plus-lg"></i> Nuevo Comprobante</button>
+  </div>
+
+  <div class="no-imprimir" style="display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin-bottom:20px;" id="kpiBox"></div>
+
+  <div class="gc-fila-lista-detalle">
+    <div class="card-giseca no-imprimir" style="padding:0; overflow:hidden; align-self:start;">
+      <table class="tabla-giseca">
+        <thead><tr><th>N°</th><th>Tipo</th><th>Beneficiario / Cliente</th><th>Concepto</th><th class="text-end">Monto</th><th>Pago</th><th></th></tr></thead>
+        <tbody id="tbodyComprobantes"></tbody>
+      </table>
+    </div>
+
+    <div class="gc-columna-detalle">
+      <div class="comprobante-formal" id="vistaComprobante" style="display:none;"></div>
+      <div id="sinSeleccion" class="no-imprimir" style="text-align:center; color:var(--gc-gris-claro); padding:40px;">Selecciona un comprobante de la lista para verlo.</div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Modal: Nuevo comprobante manual -->
+<div class="modal-giseca" id="modalNuevo">
+  <div class="modal-box">
+    <h6>Nuevo Comprobante Manual</h6>
+    <p style="font-size:12.5px; color:var(--gc-gris);">Para movimientos de caja que no vienen de una compra o venta (aportes, gastos varios, retiros, etc.).</p>
+    <div style="display:grid; gap:10px;">
+      <div><label class="form-label-giseca">Tipo</label>
+        <select id="n_tipo" class="form-control-giseca" onchange="actualizarEtiquetaEntidad()"><option value="INGRESO">Ingreso</option><option value="EGRESO">Egreso</option></select>
+      </div>
+      <div><label class="form-label-giseca" id="n_etiquetaEntidad">Recibido de *</label><input id="n_entidad" class="form-control-giseca" placeholder="Nombre de la persona o empresa" required></div>
+      <div><label class="form-label-giseca">Concepto (qué es este movimiento)</label><input id="n_concepto" class="form-control-giseca" placeholder="Ej: Pago de alquiler, aporte de capital..."></div>
+      <div><label class="form-label-giseca">Monto</label><input type="number" step="0.01" id="n_monto" class="form-control-giseca"></div>
+      <div><label class="form-label-giseca">Fecha</label><input type="date" id="n_fecha" class="form-control-giseca"></div>
+      <div><label class="form-label-giseca">Forma de pago</label>
+        <select id="n_metodo" class="form-control-giseca"><option>Efectivo</option><option>Transferencia</option><option>QR</option><option>Tarjeta</option><option>Cheque</option></select>
+      </div>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+        <div><label class="form-label-giseca">Banco (opcional)</label><input id="n_banco" class="form-control-giseca"></div>
+        <div><label class="form-label-giseca">Cuenta (opcional)</label><input id="n_cuenta" class="form-control-giseca"></div>
+      </div>
+      <div><label class="form-label-giseca">N° de referencia (opcional)</label><input id="n_referencia" class="form-control-giseca"></div>
+    </div>
+    <div style="display:flex; gap:8px; margin-top:16px;">
+      <button class="btn-giseca btn-primario" onclick="guardarNuevoComprobante()">Guardar</button>
+      <button class="btn-giseca btn-outline" onclick="document.getElementById('modalNuevo').classList.remove('abierto')">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Editar datos generales -->
+<div class="modal-giseca" id="modalEditar">
+  <div class="modal-box">
+    <h6>Editar Comprobante</h6>
+    <input type="hidden" id="e_id">
+    <div style="display:grid; gap:10px;">
+      <div><label class="form-label-giseca">Concepto</label><input id="e_concepto" class="form-control-giseca"></div>
+      <div><label class="form-label-giseca" id="e_etiquetaEntidad">Beneficiario / Recibido de *</label><input id="e_entidad" class="form-control-giseca" placeholder="Nombre de la persona o empresa" required></div>
+      <div><label class="form-label-giseca">Monto total</label><input type="number" step="0.01" id="e_monto" class="form-control-giseca"></div>
+      <div><label class="form-label-giseca">Fecha</label><input type="date" id="e_fecha" class="form-control-giseca"></div>
+      <div><label class="form-label-giseca">Documento relacionado</label><input id="e_referencia" class="form-control-giseca"></div>
+      <div><label class="form-label-giseca">Nota / Observación</label><textarea id="e_nota" class="form-control-giseca" rows="2" placeholder="Ej: cliente pagó mitad en efectivo y mitad por transferencia"></textarea></div>
+    </div>
+    <div style="display:flex; gap:8px; margin-top:16px;">
+      <button class="btn-giseca btn-primario" onclick="guardarEdicion()">Guardar cambios</button>
+      <button class="btn-giseca btn-outline" onclick="document.getElementById('modalEditar').classList.remove('abierto')">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Agregar forma de pago al desglose -->
+<div class="modal-giseca" id="modalPago">
+  <div class="modal-box">
+    <h6>Agregar Forma de Pago</h6>
+    <input type="hidden" id="p_id">
+    <p style="font-size:12.5px; color:var(--gc-gris);">Ej: si el total es Bs 1,000 y pagaron Bs 600 por transferencia y Bs 400 en efectivo, agrégalos aquí como dos formas de pago separadas.</p>
+    <div style="display:grid; gap:10px;">
+      <div><label class="form-label-giseca">Forma de pago</label>
+        <select id="p_metodo" class="form-control-giseca"><option>Efectivo</option><option>Transferencia</option><option>QR</option><option>Tarjeta</option><option>Cheque</option></select>
+      </div>
+      <div><label class="form-label-giseca">Monto de esta forma de pago</label><input type="number" step="0.01" id="p_monto" class="form-control-giseca"></div>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+        <div><label class="form-label-giseca">Banco (opcional)</label><input id="p_banco" class="form-control-giseca"></div>
+        <div><label class="form-label-giseca">Cuenta (opcional)</label><input id="p_cuenta" class="form-control-giseca"></div>
+      </div>
+      <div><label class="form-label-giseca">N° de referencia (opcional)</label><input id="p_referencia" class="form-control-giseca"></div>
+      <div><label class="form-label-giseca">Nota (opcional)</label><input id="p_nota" class="form-control-giseca" placeholder="Ej: entregado en caja, comprobante adjunto..."></div>
+    </div>
+    <div style="display:flex; gap:8px; margin-top:16px;">
+      <button class="btn-giseca btn-primario" onclick="guardarPago()">Agregar</button>
+      <button class="btn-giseca btn-outline" onclick="document.getElementById('modalPago').classList.remove('abierto')">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<script src="js/data.js"></script>
+<script src="js/layout.js"></script>
+<script>
+renderLayout('comprobantes', 'Comprobantes de Ingreso y Egreso');
+let idSeleccionado = null;
+
+function render() {
+  const filtroTipo = document.getElementById('filtroTipo').value;
+  const termino = document.getElementById('buscador').value.toLowerCase();
+  let lista = [...DB.comprobantes()].reverse();
+  if (filtroTipo) lista = lista.filter(c => c.tipo === filtroTipo);
+  if (termino) lista = lista.filter(c => c.numero.toLowerCase().includes(termino) || c.concepto.toLowerCase().includes(termino));
+
+  document.getElementById('tbodyComprobantes').innerHTML = lista.map(c => `
+    <tr style="cursor:pointer;" onclick="verComprobante(${c.id})">
+      <td><span class="codigo-chip ${c.tipo==='INGRESO'?'equivalente':''}">${c.numero}</span></td>
+      <td><span class="estado ${c.tipo==='INGRESO'?'estado-aprobada':'estado-rechazada'}">${c.tipo}</span></td>
+      <td style="max-width:150px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+        ${c.entidad ? c.entidad : '<span style="color:var(--gc-rojo); font-style:italic;">Sin definir</span>'}
+      </td>
+      <td style="max-width:170px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${c.concepto}</td>
+      <td class="text-end fw-bold">Bs ${formatoMoneda(c.monto)}</td>
+      <td>${(c.pagos && c.pagos.length > 1) ? `<span class="estado estado-enviada">${c.pagos.length} formas</span>` : `<span style="font-size:11.5px; color:var(--gc-gris-claro);">${c.metodo}</span>`}</td>
+      <td class="text-end"><i class="bi bi-eye" style="color:var(--gc-gris-claro);"></i></td>
+    </tr>
+  `).join('');
+
+  const todos = DB.comprobantes();
+  const ingresos = todos.filter(c => c.tipo === 'INGRESO').reduce((s,c) => s + c.monto, 0);
+  const egresos = todos.filter(c => c.tipo === 'EGRESO').reduce((s,c) => s + c.monto, 0);
+  document.getElementById('kpiBox').innerHTML = `
+    <div class="kpi verde"><div class="label">Total Ingresos</div><div class="value">Bs ${formatoMoneda(ingresos)}</div></div>
+    <div class="kpi naranja"><div class="label">Total Egresos</div><div class="value">Bs ${formatoMoneda(egresos)}</div></div>
+    <div class="kpi azul"><div class="label">Balance</div><div class="value">Bs ${formatoMoneda(ingresos - egresos)}</div></div>
+  `;
+
+  if (idSeleccionado) verComprobante(idSeleccionado); // refresca la vista si sigue abierta
+}
+
+function verComprobante(id) {
+  const c = DB.buscarComprobantePorId(id);
+  if (!c) return;
+  idSeleccionado = id;
+  document.getElementById('sinSeleccion').style.display = 'none';
+  const vista = document.getElementById('vistaComprobante');
+  vista.style.display = 'block';
+
+  const pagos = c.pagos && c.pagos.length ? c.pagos : [{ metodo: c.metodo, monto: c.monto }];
+  const asignado = DB.totalAsignadoComprobante({ pagos });
+  const saldoSinAsignar = Math.round((c.monto - asignado) * 100) / 100;
+  const porcentaje = c.monto > 0 ? Math.min(100, Math.round(asignado / c.monto * 100)) : 100;
+  const esMultiple = pagos.length > 1;
+  const pagoPrincipal = pagos[0] || {};
+
+  const etiquetaEntidad = c.tipo === 'EGRESO' ? 'Beneficiario(s)' : 'Recibido de';
+  const etiquetaBanco = c.tipo === 'EGRESO' ? 'Banco Destino' : 'Banco Origen';
+  const etiquetaCuenta = c.tipo === 'EGRESO' ? 'Cta. de Origen' : 'Cta. Destino';
+
+  vista.innerHTML = `
+    <div class="banner">
+      <div class="empresa">GISECA SRL</div>
+      <div class="tipo">COMPROBANTE DE ${c.tipo}</div>
+    </div>
+    <div class="cuerpo">
+
+      <div class="fila-campos">
+        <div class="campo"><div class="etiqueta">Nro. Comprobante</div><div class="valor fw-bold">${c.numero}</div></div>
+        <div class="campo"><div class="etiqueta">Fecha de Pago</div><div class="valor">${c.fecha}</div></div>
+      </div>
+      <div class="fila-campos">
+        <div class="campo"><div class="etiqueta">${etiquetaEntidad}</div><div class="valor">${c.entidad || '—'}</div></div>
+        <div class="campo"><div class="etiqueta">Hora</div><div class="valor">${c.hora || '—'}</div></div>
+      </div>
+      <div class="fila-campos">
+        <div class="campo"><div class="etiqueta">Forma de Pago</div><div class="valor">${esMultiple ? 'Múltiple (ver detalle)' : pagoPrincipal.metodo}</div></div>
+        <div class="campo"><div class="etiqueta">${etiquetaBanco}</div><div class="valor">${esMultiple ? '—' : (pagoPrincipal.banco || '—')}</div></div>
+      </div>
+      <div class="fila-campos" style="border-bottom:none;">
+        <div class="campo"><div class="etiqueta">${etiquetaCuenta}</div><div class="valor">${esMultiple ? '—' : (pagoPrincipal.cuenta || '—')}</div></div>
+        <div class="campo"><div class="etiqueta">Nro. Referencia</div><div class="valor">${esMultiple ? '—' : (pagoPrincipal.numeroReferencia || '—')}</div></div>
+      </div>
+
+      <div class="caja-monto">
+        <div class="fila-monto">
+          <span class="etq">Monto Total Bs.</span>
+          <span class="num" style="color:${c.tipo==='INGRESO'?'var(--gc-verde)':'var(--gc-rojo)'};">Bs. ${formatoMoneda(c.monto)}</span>
+        </div>
+        <div class="letras">${montoALetras(c.monto)}</div>
+      </div>
+
+      <div class="caja-concepto">
+        <div class="etq">Descripción / Concepto</div>
+        <div>${c.concepto}</div>
+      </div>
+
+      ${c.nota ? `
+        <div class="caja-concepto">
+          <div class="etq">Nota / Observación</div>
+          <div>${c.nota}</div>
+        </div>
+      ` : ''}
+
+      ${esMultiple ? `
+        <div class="desglose-formal">
+          <table>
+            <thead><tr><th>Forma de pago</th><th>Banco/Cta.</th><th>Referencia</th><th>Nota</th><th style="text-align:right;">Monto</th></tr></thead>
+            <tbody>
+              ${pagos.map(p => `
+                <tr><td>${p.metodo}</td><td>${[p.banco, p.cuenta].filter(Boolean).join(' / ') || '—'}</td><td>${p.numeroReferencia || '—'}</td><td>${p.nota || '—'}</td><td style="text-align:right;">Bs ${formatoMoneda(p.monto)}</td></tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      ` : ''}
+
+      <div class="no-imprimir" style="margin-bottom:14px; padding-top:10px; border-top:1px dashed var(--gc-borde);">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+          <strong style="font-size:12px;">Desglose de forma de pago</strong>
+          <button class="btn-giseca btn-outline btn-sm" onclick="abrirModalPago(${c.id})"><i class="bi bi-plus"></i> Agregar</button>
+        </div>
+        ${pagos.map((p, i) => `
+          <div class="fila-pago">
+            <span><i class="bi bi-${p.metodo==='Efectivo'?'cash':p.metodo==='Transferencia'?'bank':p.metodo==='QR'?'qr-code':'credit-card'}"></i> ${p.metodo}${p.banco ? ' — ' + p.banco : ''}${p.nota ? ` <span style="color:var(--gc-gris-claro); font-style:italic;">(${p.nota})</span>` : ''}</span>
+            <span style="display:flex; align-items:center; gap:8px;">
+              <strong>Bs ${formatoMoneda(p.monto)}</strong>
+              ${pagos.length > 1 ? `<button class="btn-giseca btn-outline btn-icon btn-sm" style="width:24px;height:24px;" onclick="quitarPago(${c.id}, ${i})"><i class="bi bi-x" style="font-size:11px;"></i></button>` : ''}
+            </span>
+          </div>
+        `).join('')}
+        <div class="barra-saldo"><div class="relleno" style="width:${porcentaje}%; background:${saldoSinAsignar === 0 ? 'var(--gc-verde)' : saldoSinAsignar < 0 ? 'var(--gc-rojo)' : 'var(--gc-amarillo)'};"></div></div>
+        <div style="font-size:11.5px; color:var(--gc-gris-claro); margin-top:4px; text-align:right;">
+          ${saldoSinAsignar === 0 ? '✓ Totalmente distribuido' : saldoSinAsignar > 0 ? `Bs ${formatoMoneda(saldoSinAsignar)} sin asignar todavía` : `Bs ${formatoMoneda(Math.abs(saldoSinAsignar))} de más (revisar montos)`}
+        </div>
+      </div>
+
+      <div class="firmas">
+        <div><div style="height:30px;"></div><div class="linea">Elaborado por</div></div>
+        <div><div style="height:30px;"></div><div class="linea">Aprobado por</div></div>
+      </div>
+
+    </div>
+
+    <div class="no-imprimir" style="display:flex; gap:8px; padding:0 18px 18px;">
+      <button class="btn-giseca btn-oscuro" style="flex:1; justify-content:center;" onclick="window.print()"><i class="bi bi-printer"></i> Imprimir</button>
+      <button class="btn-giseca btn-outline" onclick="abrirModalEditar(${c.id})"><i class="bi bi-pencil"></i> Editar</button>
+      <button class="btn-giseca btn-outline" onclick="eliminarComprobanteConfirm(${c.id})"><i class="bi bi-trash" style="color:var(--gc-rojo);"></i></button>
+    </div>
+  `;
+}
+
+// ---- Nuevo comprobante manual ----
+function actualizarEtiquetaEntidad() {
+  const tipo = document.getElementById('n_tipo').value;
+  document.getElementById('n_etiquetaEntidad').textContent = tipo === 'EGRESO' ? 'Beneficiario (a quién se le paga) *' : 'Recibido de (quién nos paga) *';
+}
+
+function abrirModalNuevo() {
+  document.getElementById('n_concepto').value = '';
+  document.getElementById('n_entidad').value = '';
+  document.getElementById('n_monto').value = '';
+  document.getElementById('n_fecha').value = new Date().toISOString().slice(0,10);
+  document.getElementById('n_banco').value = '';
+  document.getElementById('n_cuenta').value = '';
+  document.getElementById('n_referencia').value = '';
+  document.getElementById('n_tipo').value = 'INGRESO';
+  actualizarEtiquetaEntidad();
+  document.getElementById('modalNuevo').classList.add('abierto');
+}
+function guardarNuevoComprobante() {
+  const concepto = document.getElementById('n_concepto').value.trim();
+  const entidad = document.getElementById('n_entidad').value.trim();
+  const monto = parseFloat(document.getElementById('n_monto').value) || 0;
+
+  if (!entidad) { mostrarToast('Escribe el nombre del beneficiario / de quién paga', 'error'); return; }
+  if (!concepto || monto <= 0) { mostrarToast('Completa el concepto y un monto válido', 'error'); return; }
+
+  const comp = DB.crearComprobanteManual({
+    tipo: document.getElementById('n_tipo').value,
+    concepto, monto, entidad,
+    fecha: document.getElementById('n_fecha').value,
+    metodo: document.getElementById('n_metodo').value,
+    banco: document.getElementById('n_banco').value.trim(),
+    cuenta: document.getElementById('n_cuenta').value.trim(),
+    numeroReferencia: document.getElementById('n_referencia').value.trim(),
+  });
+  mostrarToast('Comprobante ' + comp.numero + ' creado', 'exito');
+  document.getElementById('modalNuevo').classList.remove('abierto');
+  render();
+  verComprobante(comp.id);
+}
+
+// ---- Editar datos generales ----
+function abrirModalEditar(id) {
+  const c = DB.buscarComprobantePorId(id);
+  document.getElementById('e_id').value = c.id;
+  document.getElementById('e_concepto').value = c.concepto;
+  document.getElementById('e_entidad').value = c.entidad || '';
+  document.getElementById('e_etiquetaEntidad').textContent = (c.tipo === 'EGRESO' ? 'Beneficiario (a quién se le paga)' : 'Recibido de (quién nos paga)') + ' *';
+  document.getElementById('e_monto').value = c.monto;
+  document.getElementById('e_fecha').value = c.fecha;
+  document.getElementById('e_referencia').value = c.referencia || '';
+  document.getElementById('e_nota').value = c.nota || '';
+  document.getElementById('modalEditar').classList.add('abierto');
+}
+function guardarEdicion() {
+  const id = document.getElementById('e_id').value;
+  const entidad = document.getElementById('e_entidad').value.trim();
+  if (!entidad) { mostrarToast('Escribe el nombre del beneficiario / de quién paga', 'error'); return; }
+
+  DB.actualizarComprobante(id, {
+    concepto: document.getElementById('e_concepto').value.trim(),
+    entidad,
+    monto: parseFloat(document.getElementById('e_monto').value) || 0,
+    fecha: document.getElementById('e_fecha').value,
+    referencia: document.getElementById('e_referencia').value.trim(),
+    nota: document.getElementById('e_nota').value.trim(),
+  });
+  mostrarToast('Comprobante actualizado', 'exito');
+  document.getElementById('modalEditar').classList.remove('abierto');
+  render();
+}
+
+// ---- Desglose de formas de pago ----
+function abrirModalPago(id) {
+  document.getElementById('p_id').value = id;
+  document.getElementById('p_monto').value = '';
+  document.getElementById('p_banco').value = '';
+  document.getElementById('p_cuenta').value = '';
+  document.getElementById('p_referencia').value = '';
+  document.getElementById('p_nota').value = '';
+  document.getElementById('modalPago').classList.add('abierto');
+}
+function guardarPago() {
+  const id = document.getElementById('p_id').value;
+  const metodo = document.getElementById('p_metodo').value;
+  const monto = parseFloat(document.getElementById('p_monto').value) || 0;
+  if (monto <= 0) { mostrarToast('Ingresa un monto válido', 'error'); return; }
+  DB.agregarPagoComprobante(id, metodo, monto,
+    document.getElementById('p_banco').value.trim(),
+    document.getElementById('p_cuenta').value.trim(),
+    document.getElementById('p_referencia').value.trim(),
+    document.getElementById('p_nota').value.trim());
+  mostrarToast('Forma de pago agregada', 'exito');
+  document.getElementById('modalPago').classList.remove('abierto');
+  render();
+}
+function quitarPago(id, indice) {
+  DB.quitarPagoComprobante(id, indice);
+  render();
+}
+
+function eliminarComprobanteConfirm(id) {
+  if (!confirm('¿Eliminar este comprobante? Esta acción no revierte stock ni deshace la compra/venta relacionada, solo borra el registro contable.')) return;
+  DB.eliminarComprobante(id);
+  idSeleccionado = null;
+  document.getElementById('vistaComprobante').style.display = 'none';
+  document.getElementById('sinSeleccion').style.display = 'block';
+  mostrarToast('Comprobante eliminado', 'exito');
+  render();
+}
+
+document.getElementById('filtroTipo').addEventListener('change', render);
+document.getElementById('buscador').addEventListener('input', render);
+render();
+
+// Si venimos desde compras.html/ventas.html con ?buscar=NUMERO, abrir directo ese comprobante
+const params = new URLSearchParams(window.location.search);
+const buscarNum = params.get('buscar');
+if (buscarNum) {
+  const c = DB.comprobantes().find(x => x.numero === buscarNum);
+  if (c) verComprobante(c.id);
+}
+</script>
+</body>
+</html>
