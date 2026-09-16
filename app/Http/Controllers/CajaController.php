@@ -9,6 +9,7 @@ use App\Services\ContadorService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use InvalidArgumentException;
 
 class CajaController extends Controller
 {
@@ -56,24 +57,32 @@ class CajaController extends Controller
             'monto' => 'required|numeric|min:0.01',
             'metodo' => 'nullable|string|max:100',
         ]);
+        $monto = round((float) $data['monto'], 2);
 
-        $saldo = $venta->saldo;
-        if ($venta->estado !== 'activa' || $saldo <= 0) {
-            return back()->with('error', 'Esta venta no tiene saldo pendiente.');
-        }
-        if ((float) $data['monto'] > $saldo) {
-            return back()->with('error', "El monto supera el saldo pendiente (Bs {$saldo}).");
-        }
+        try {
+            DB::transaction(function () use ($venta, $monto, $data) {
+                $bloqueada = Venta::whereKey($venta->getKey())->lockForUpdate()->firstOrFail();
+                $saldo = $bloqueada->saldo;
+                if ($bloqueada->estado !== 'activa' || $saldo <= 0) {
+                    throw new InvalidArgumentException('Esta venta no tiene saldo pendiente.');
+                }
+                if ($monto > $saldo) {
+                    throw new InvalidArgumentException("El monto supera el saldo pendiente (Bs {$saldo}).");
+                }
 
-        $this->registrarPago(
-            tipo: 'ingreso',
-            concepto: "Cobro venta {$venta->numero} — {$venta->cliente_nombre}",
-            entidad: $venta->cliente_nombre,
-            monto: (float) $data['monto'],
-            metodo: $data['metodo'] ?? 'Efectivo',
-            referencia: $venta->numero,
-        );
-        $venta->increment('pagado', round((float) $data['monto'], 2));
+                $this->registrarPago(
+                    tipo: 'ingreso',
+                    concepto: "Cobro venta {$bloqueada->numero} — {$bloqueada->cliente_nombre}",
+                    entidad: $bloqueada->cliente_nombre,
+                    monto: $monto,
+                    metodo: $data['metodo'] ?? 'Efectivo',
+                    referencia: $bloqueada->numero,
+                );
+                $bloqueada->increment('pagado', $monto);
+            });
+        } catch (InvalidArgumentException $e) {
+            return back()->with('error', $e->getMessage());
+        }
 
         return back()->with('exito', 'Cobro registrado');
     }
@@ -84,24 +93,32 @@ class CajaController extends Controller
             'monto' => 'required|numeric|min:0.01',
             'metodo' => 'nullable|string|max:100',
         ]);
+        $monto = round((float) $data['monto'], 2);
 
-        $saldo = $compra->saldo;
-        if ($saldo <= 0) {
-            return back()->with('error', 'Esta compra no tiene saldo pendiente.');
-        }
-        if ((float) $data['monto'] > $saldo) {
-            return back()->with('error', "El monto supera el saldo pendiente (Bs {$saldo}).");
-        }
+        try {
+            DB::transaction(function () use ($compra, $monto, $data) {
+                $bloqueada = Compra::whereKey($compra->getKey())->lockForUpdate()->firstOrFail();
+                $saldo = $bloqueada->saldo;
+                if ($saldo <= 0) {
+                    throw new InvalidArgumentException('Esta compra no tiene saldo pendiente.');
+                }
+                if ($monto > $saldo) {
+                    throw new InvalidArgumentException("El monto supera el saldo pendiente (Bs {$saldo}).");
+                }
 
-        $this->registrarPago(
-            tipo: 'egreso',
-            concepto: "Pago compra {$compra->numero} — {$compra->proveedor_nombre}",
-            entidad: $compra->proveedor_nombre,
-            monto: (float) $data['monto'],
-            metodo: $data['metodo'] ?? 'Efectivo',
-            referencia: $compra->numero,
-        );
-        $compra->increment('pagado', round((float) $data['monto'], 2));
+                $this->registrarPago(
+                    tipo: 'egreso',
+                    concepto: "Pago compra {$bloqueada->numero} — {$bloqueada->proveedor_nombre}",
+                    entidad: $bloqueada->proveedor_nombre,
+                    monto: $monto,
+                    metodo: $data['metodo'] ?? 'Efectivo',
+                    referencia: $bloqueada->numero,
+                );
+                $bloqueada->increment('pagado', $monto);
+            });
+        } catch (InvalidArgumentException $e) {
+            return back()->with('error', $e->getMessage());
+        }
 
         return back()->with('exito', 'Pago registrado');
     }
