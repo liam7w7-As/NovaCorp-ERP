@@ -59,7 +59,7 @@
 | **Códigos de Barras** | `picqer/php-barcode-generator` |
 | **Comunicación Fiscal** | SOAP Client nativo de PHP con soporte WSDL y criptografía `OpenSSL` |
 | **Estándar de Código** | PSR-12 / Laravel Pint (`vendor/bin/pint --format agent`) |
-| **Pruebas Automatizadas** | PHPUnit 12.x (21 pruebas automatizadas de integración y features) |
+| **Pruebas Automatizadas** | PHPUnit 12.x (95 pruebas automatizadas de integración y features) |
 
 ---
 
@@ -496,13 +496,23 @@ php vendor/phpunit/phpunit/phpunit -c phpunit.xml
 
 **Resultado esperado:**
 ```text
-OK (21 tests, 62 assertions)
+OK (95 tests, 374 assertions)
 ```
 
 Las pruebas cubren:
-- Consulta y sincronización de catálogos SIN ([CatalogoTest.php](file:///c:/xampp/htdocs/giseca-erp/tests/Feature/CatalogoTest.php)).
-- Gestión multisucursal, obtención de CUIS/CUFD y ventas con emisión por sucursal ([MultisucursalTest.php](file:///c:/xampp/htdocs/giseca-erp/tests/Feature/MultisucursalTest.php)).
-- Descarga de los 4 formatos de PDF, anulación, bloqueo de reversión fuera de plazo legal y envío de correos ([FacturaImpresionYReversionTest.php](file:///c:/xampp/htdocs/giseca-erp/tests/Feature/FacturaImpresionYReversionTest.php)).
+- Consulta y sincronización de catálogos SIN (`tests/Feature/CatalogoTest.php`).
+- Gestión multisucursal, obtención de CUIS/CUFD y ventas con emisión por sucursal (`MultisucursalTest.php`).
+- Descarga de los 4 formatos de PDF, anulación, bloqueo de reversión fuera de plazo legal y envío de correos (`FacturaImpresionYReversionTest.php`).
+- Modalidades computarizada/electrónica, firma y WSDL por modalidad (`ModalidadFacturacionTest.php`).
+- Emisión dual, CUF con anchos fijos, vigencia CUFD, guardarraíl anti-simulador y cron CUFD (`SiatEmisionTest.php`).
+- Firma XMLDSig real verificada criptográficamente (`FirmaRealTest.php`).
+- Contingencias por sucursal, empaquetado con huérfanas y TarBuilder USTAR (`ContingenciaPaqueteTest.php`).
+- Módulo Finanzas: migración, permiso propio, validación y 403 sin permiso (`FinanzasTest.php`).
+- Stock atómico: descuentos, oversell bloqueado, anulación y compras (`VentaStockTest.php`).
+- Caja atómica: cobros/pagos sin sobre-cobro (`CajaCobroTest.php`).
+- Papelera: restaurar re-aplica stock y comprobante (`PapeleraRestoreTest.php`).
+- Seguridad: throttle login, password min 12, reset con clave, scope sucursal, auditoría y CSV (`SeguridadTest.php`).
+- Rendimiento e integridad: kardex, cuentas, reporte CSV, pagos y códigos (`RendimientoIntegridadTest.php`).
 
 Para formatear el código conforme a los estándares de Laravel antes de entregar:
 ```bash

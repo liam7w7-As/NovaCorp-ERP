@@ -33,21 +33,22 @@ class CajaController extends Controller
 
     public function cuentas()
     {
-        $porCobrar = Venta::where('estado', 'activa')
-            ->where('modalidad', 'credito')
+        // Sin filtro de modalidad: una venta de contado editada también puede
+        // quedar con saldo, y debe poder cobrarse desde aquí.
+        $baseCobrar = Venta::where('estado', 'activa')
             ->whereColumn('pagado', '<', 'total')
-            ->orderBy('fecha')
-            ->get();
+            ->orderBy('fecha');
+        $basePagar = Compra::whereColumn('pagado', '<', 'total')
+            ->orderBy('fecha');
 
-        $porPagar = Compra::whereColumn('pagado', '<', 'total')
-            ->orderBy('fecha')
-            ->get();
+        $porCobrar = (clone $baseCobrar)->paginate(50, ['*'], 'cobrar_page');
+        $porPagar = (clone $basePagar)->paginate(50, ['*'], 'pagar_page');
 
         return view('caja.cuentas', [
             'porCobrar' => $porCobrar,
             'porPagar' => $porPagar,
-            'totalCobrar' => round($porCobrar->sum(fn ($v) => $v->saldo), 2),
-            'totalPagar' => round($porPagar->sum(fn ($c) => $c->saldo), 2),
+            'totalCobrar' => round((float) (clone $baseCobrar)->sum(DB::raw('total - pagado')), 2),
+            'totalPagar' => round((float) (clone $basePagar)->sum(DB::raw('total - pagado')), 2),
         ]);
     }
 

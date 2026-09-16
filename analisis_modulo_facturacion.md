@@ -1,5 +1,7 @@
 # 📊 Análisis Integral del Módulo de Facturación (SIAT - SIN Bolivia)
 
+> ⚠️ **DOCUMENTO OBSOLETO (2026-09-16):** describe `FactuPlus` en CodeIgniter 3 + PostgreSQL + firma con Python. El sistema actual es **Laravel 13 + MySQL** (`app/Services/SiatService.php`, firma XMLDSig en PHP con OpenSSL). Se conserva solo como referencia histórica del dominio fiscal. La documentación vigente es `DOCUMENTACION_TECNICA_ENTREGA-GISECA.md`.
+
 Este documento detalla la arquitectura, submódulos, variables de control, flujo de datos, integraciones externas (SOAP, XMLDSig, Python) y esquema de base de datos del **Módulo de Facturación** del sistema **FactuPlus**.
 
 ---

@@ -6,6 +6,7 @@ use App\Models\Compra;
 use App\Models\Comprobante;
 use App\Models\Venta;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 
 class ComprobanteService
 {
@@ -118,29 +119,31 @@ class ComprobanteService
         $prefijo = ($data['tipo'] ?? 'ingreso') === 'egreso' ? 'EGR-' : 'ING-';
         $numero = $this->siguienteComprobante($prefijo);
 
-        $comp = Comprobante::create([
-            'numero' => $numero,
-            'tipo' => $data['tipo'] ?? 'ingreso',
-            'concepto' => $data['concepto'],
-            'entidad' => $data['entidad'] ?? null,
-            'monto' => $data['monto'],
-            'nota' => $data['nota'] ?? null,
-            'fecha' => $data['fecha'] ?? date('Y-m-d'),
-            'hora' => now()->format('H:i'),
-            'metodo' => $data['metodo'] ?? 'Efectivo',
-            'referencia' => $data['referencia'] ?? null,
-            'usuario_id' => Auth::id(),
-        ]);
+        return DB::transaction(function () use ($data, $numero) {
+            $comp = Comprobante::create([
+                'numero' => $numero,
+                'tipo' => $data['tipo'] ?? 'ingreso',
+                'concepto' => $data['concepto'],
+                'entidad' => $data['entidad'] ?? null,
+                'monto' => $data['monto'],
+                'nota' => $data['nota'] ?? null,
+                'fecha' => $data['fecha'] ?? date('Y-m-d'),
+                'hora' => now()->format('H:i'),
+                'metodo' => $data['metodo'] ?? 'Efectivo',
+                'referencia' => $data['referencia'] ?? null,
+                'usuario_id' => Auth::id(),
+            ]);
 
-        $comp->pagos()->create([
-            'forma_pago' => $this->mapearMetodo($data['metodo'] ?? 'Efectivo'),
-            'banco' => $data['banco'] ?? null,
-            'cuenta' => $data['cuenta'] ?? null,
-            'referencia' => $data['numero_referencia'] ?? null,
-            'monto' => $data['monto'],
-        ]);
+            $comp->pagos()->create([
+                'forma_pago' => $this->mapearMetodo($data['metodo'] ?? 'Efectivo'),
+                'banco' => $data['banco'] ?? null,
+                'cuenta' => $data['cuenta'] ?? null,
+                'referencia' => $data['numero_referencia'] ?? null,
+                'monto' => $data['monto'],
+            ]);
 
-        return $comp;
+            return $comp;
+        });
     }
 
     public function mapearMetodo(string $metodo): string

@@ -12,7 +12,15 @@
       @endforeach
     </select>
   </form>
-  <div style="display:flex; gap:8px;">
+  <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+    <form method="GET" action="{{ route('kardex.show', $producto) }}" style="display:flex; gap:6px; margin:0; align-items:center;">
+      <input type="date" name="desde" value="{{ $desde ?? '' }}" class="form-control-giseca" style="width:auto;">
+      <input type="date" name="hasta" value="{{ $hasta ?? '' }}" class="form-control-giseca" style="width:auto;">
+      <button class="btn-giseca btn-outline btn-sm">Filtrar</button>
+      @if(! empty($desde) || ! empty($hasta))
+        <a class="btn-giseca btn-outline btn-sm" href="{{ route('kardex.show', $producto) }}">Limpiar</a>
+      @endif
+    </form>
     <span class="codigo-chip">{{ $producto->codigo }}</span>
     <span style="font-size:13px;">Stock actual: <strong>{{ $producto->stock }}</strong> · Valorizado: <strong>Bs {{ formatoMoneda((float) $producto->stock * (float) $producto->costo) }}</strong></span>
     <a class="btn-giseca btn-outline btn-sm" href="{{ route('kardex.index') }}">← Volver</a>
@@ -23,6 +31,12 @@
   <table class="tabla-giseca">
     <thead><tr><th>Fecha</th><th>Documento</th><th>Movimiento</th><th>Detalle</th><th class="text-end">Entrada</th><th class="text-end">Salida</th><th class="text-end">Saldo</th></tr></thead>
     <tbody>
+      @if(! empty($desde))
+        <tr style="background:var(--gc-primario-suave, #f2f2f2);">
+          <td colspan="6" class="text-end fw-bold">Saldo inicial al {{ $desde }}</td>
+          <td class="text-end fw-bold">{{ $saldoInicial }}</td>
+        </tr>
+      @endif
       @forelse($movimientos as $m)
         <tr>
           <td>{{ $m['fecha'] }}</td>

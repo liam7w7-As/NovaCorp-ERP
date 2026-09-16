@@ -7,23 +7,69 @@ use Illuminate\Http\Request;
 
 class KardexController extends Controller
 {
-    public function index()
+    public function index(Request $request)
     {
-        $productos = Producto::orderBy('descripcion')->get();
-        $valorizado = $productos->map(fn ($p) => [
+        $q = trim($request->get('q', ''));
+
+        $productos = Producto::query()
+            ->when($q, fn ($query) => $query->where(function ($sub) use ($q) {
+                $sub->where('codigo', 'like', "%{$q}%")
+                    ->orWhere('descripcion', 'like', "%{$q}%");
+            }))
+            ->orderBy('descripcion')
+            ->paginate(50)
+            ->withQueryString();
+
+        $valorizado = $productos->getCollection()->map(fn ($p) => [
             'producto' => $p,
             'valor' => round((float) $p->stock * (float) $p->costo, 2),
         ]);
-        $totalValor = round($valorizado->sum('valor'), 2);
+        $totalValor = round((float) Producto::query()
+            ->when($q, fn ($query) => $query->where(function ($sub) use ($q) {
+                $sub->where('codigo', 'like', "%{$q}%")
+                    ->orWhere('descripcion', 'like', "%{$q}%");
+            }))
+            ->selectRaw('COALESCE(SUM(stock * costo), 0) as total')->value('total'), 2);
 
-        return view('kardex.index', compact('productos', 'valorizado', 'totalValor'));
+        return view('kardex.index', compact('productos', 'valorizado', 'totalValor') + ['q' => $q]);
     }
 
     public function show(Producto $producto, Request $request)
     {
+        $data = $request->validate([
+            'desde' => 'nullable|date',
+            'hasta' => 'nullable|date|after_or_equal:desde',
+        ]);
+        $desde = $data['desde'] ?? null;
+        $hasta = $data['hasta'] ?? null;
+
+        $enRango = fn ($query, string $relacion) => $query->whereHas($relacion, function ($q) use ($relacion, $desde, $hasta) {
+            if ($relacion === 'venta') {
+                $q->where('estado', 'activa');
+            }
+            if ($desde) {
+                $q->whereDate('fecha', '>=', $desde);
+            }
+            if ($hasta) {
+                $q->whereDate('fecha', '<=', $hasta);
+            }
+        });
+
+        // Saldo de arrastre: movimientos anteriores al filtro (mismas reglas de inclusión).
+        $saldoInicial = 0;
+        if ($desde) {
+            $entradas = (float) $producto->detalleCompras()
+                ->whereHas('compra', fn ($q) => $q->whereDate('fecha', '<', $desde))
+                ->sum('cantidad');
+            $salidas = (float) $producto->detalleVentas()
+                ->whereHas('venta', fn ($q) => $q->where('estado', 'activa')->whereDate('fecha', '<', $desde))
+                ->sum('cantidad');
+            $saldoInicial = round($entradas - $salidas, 2);
+        }
+
         $movimientos = collect();
 
-        foreach ($producto->detalleCompras()->with('compra')->get() as $d) {
+        foreach ($enRango($producto->detalleCompras()->with('compra'), 'compra')->get() as $d) {
             if (! $d->compra) {
                 continue;
             }
@@ -37,7 +83,7 @@ class KardexController extends Controller
                 'costo' => (float) $d->precio_unitario,
             ]);
         }
-        foreach ($producto->detalleVentas()->with('venta')->get() as $d) {
+        foreach ($enRango($producto->detalleVentas()->with('venta'), 'venta')->get() as $d) {
             if (! $d->venta || $d->venta->estado !== 'activa') {
                 continue;
             }
@@ -53,7 +99,7 @@ class KardexController extends Controller
         }
 
         $movimientos = $movimientos->sortBy([['fecha', 'asc'], ['documento', 'asc']])->values();
-        $saldo = 0;
+        $saldo = $saldoInicial;
         $movimientos = $movimientos->map(function ($m) use (&$saldo) {
             $saldo = round($saldo + $m['entrada'] - $m['salida'], 2);
             $m['saldo'] = $saldo;
@@ -63,6 +109,6 @@ class KardexController extends Controller
 
         $productos = Producto::orderBy('descripcion')->get(['id', 'codigo', 'descripcion']);
 
-        return view('kardex.show', compact('producto', 'movimientos', 'productos'));
+        return view('kardex.show', compact('producto', 'movimientos', 'productos', 'desde', 'hasta', 'saldoInicial'));
     }
 }

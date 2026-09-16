@@ -205,15 +205,7 @@ class FacturaController extends Controller
 
     public function reporteAnulaciones(Request $request)
     {
-        $query = FacturaElectronica::with(['venta', 'sucursal', 'puntoVenta'])
-            ->where('estado', 'anulada')
-            ->orderByDesc('id');
-
-        if ($request->filled('sucursal_id')) {
-            $query->where('sucursal_id', $request->get('sucursal_id'));
-        }
-
-        $lineas = ['Numero,CUF,Sucursal,PuntoVenta,Cliente,NIT,Fecha,Total,Recepcion'];
+        $sucursalId = $request->get('sucursal_id');
         // Anti CSV-injection: neutralizar celdas que empiezan con = + - @ (Excel las ejecutaría).
         $esc = function ($v) {
             $v = (string) $v;
@@ -223,24 +215,28 @@ class FacturaController extends Controller
 
             return '"'.str_replace('"', '""', $v).'"';
         };
-        foreach ($query->get() as $f) {
-            $lineas[] = implode(',', [
-                $f->numero_factura,
-                $f->cuf,
-                $esc($f->sucursal?->nombre ?? ('Sucursal '.$f->codigo_sucursal)),
-                $esc($f->puntoVenta?->nombre ?? ('POS '.$f->codigo_punto_venta)),
-                $esc($f->venta->cliente_nombre ?? ''),
-                $esc($f->venta->nit_cliente ?? ''),
-                $f->fecha_emision->format('Y-m-d H:i'),
-                $f->venta->total ?? 0,
-                $f->codigo_recepcion,
-            ]);
-        }
 
-        return response(implode("\n", $lineas), 200, [
-            'Content-Type' => 'text/csv; charset=UTF-8',
-            'Content-Disposition' => 'attachment; filename="anulaciones.csv"',
-        ]);
+        return response()->streamDownload(function () use ($sucursalId, $esc) {
+            echo "Numero,CUF,Sucursal,PuntoVenta,Cliente,NIT,Fecha,Total,Recepcion\n";
+            FacturaElectronica::with(['venta', 'sucursal', 'puntoVenta'])
+                ->where('estado', 'anulada')
+                ->when($sucursalId, fn ($q, $s) => $q->where('sucursal_id', $s))
+                ->orderBy('id')
+                ->lazyById(500)
+                ->each(function ($f) use ($esc) {
+                    echo implode(',', [
+                        $f->numero_factura,
+                        $f->cuf,
+                        $esc($f->sucursal?->nombre ?? ('Sucursal '.$f->codigo_sucursal)),
+                        $esc($f->puntoVenta?->nombre ?? ('POS '.$f->codigo_punto_venta)),
+                        $esc($f->venta?->cliente_nombre ?? ''),
+                        $esc($f->venta?->nit_cliente ?? ''),
+                        $f->fecha_emision?->format('Y-m-d H:i') ?? '',
+                        $f->venta?->total ?? 0,
+                        $f->codigo_recepcion,
+                    ])."\n";
+                });
+        }, 'anulaciones.csv', ['Content-Type' => 'text/csv; charset=UTF-8']);
     }
 
     public function descargarPdf(FacturaElectronica $factura, FacturaService $facturas)

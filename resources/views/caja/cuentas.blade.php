@@ -26,6 +26,7 @@
         @endforelse
       </tbody>
     </table>
+    <div style="padding:10px 18px;">{{ $porCobrar->links() }}</div>
   </div>
 
   <div class="card-giseca" style="padding:0; overflow:hidden;">
@@ -45,6 +46,7 @@
         @endforelse
       </tbody>
     </table>
+    <div style="padding:10px 18px;">{{ $porPagar->links() }}</div>
   </div>
 </div>
 

@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Contador;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 
 class ContadorService
@@ -17,7 +18,12 @@ class ContadorService
             $contador = Contador::where('clave', $prefijo)->lockForUpdate()->first();
 
             if (! $contador) {
-                $contador = Contador::create(['clave' => $prefijo, 'valor' => 0]);
+                try {
+                    $contador = Contador::create(['clave' => $prefijo, 'valor' => 0]);
+                } catch (QueryException) {
+                    // Otro proceso lo creó primero: releer bajo lock.
+                    $contador = Contador::where('clave', $prefijo)->lockForUpdate()->firstOrFail();
+                }
             }
 
             $contador->increment('valor');

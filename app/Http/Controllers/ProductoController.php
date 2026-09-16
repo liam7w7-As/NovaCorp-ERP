@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Producto;
 use App\Services\StockService;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Picqer\Barcode\BarcodeGeneratorHTML;
@@ -84,7 +85,19 @@ class ProductoController extends Controller
         $data['stock'] = $data['stock'] ?? 0;
         $data['stock_min'] = $data['stock_min'] ?? 0;
 
-        Producto::create($data);
+        // El código interno se genera con conteo: ante colisión concurrente
+        // se regenera con conteo fresco (la columna es UNIQUE).
+        for ($i = 0; ; $i++) {
+            try {
+                Producto::create($data);
+                break;
+            } catch (QueryException $e) {
+                if ($i >= 3 || ! str_contains($e->getMessage(), 'codigo_interno')) {
+                    throw $e;
+                }
+                $data['codigo_interno'] = null;
+            }
+        }
 
         return back()->with('exito', 'Producto creado');
     }

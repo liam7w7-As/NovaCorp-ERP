@@ -208,7 +208,7 @@ class FacturaImpresionYReversionTest extends TestCase
 
         $response->assertStatus(200);
         $this->assertStringContainsString('text/csv', $response->headers->get('Content-Type'));
-        $content = $response->getContent();
+        $content = $response->streamedContent();
         $this->assertStringContainsString('Numero,CUF,Sucursal,PuntoVenta,Cliente', $content);
         $this->assertStringContainsString($this->factura->numero_factura, $content);
         $this->assertStringContainsString('Casa Matriz Central', $content);

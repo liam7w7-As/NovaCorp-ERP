@@ -145,6 +145,14 @@ class ComprobanteController extends Controller
             'nota' => 'nullable|string|max:255',
         ]);
 
+        $asignado = round((float) $comprobante->pagos()->sum('monto'), 2);
+        if (round($asignado + (float) $data['monto'], 2) > round((float) $comprobante->monto, 2)) {
+            return back()->with(
+                'error',
+                "Las formas de pago (Bs {$asignado} + Bs {$data['monto']}) superarían el monto del comprobante (Bs {$comprobante->monto})."
+            );
+        }
+
         $comprobante->pagos()->create([
             'forma_pago' => $data['forma_pago'],
             'monto' => $data['monto'],

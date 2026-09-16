@@ -6,6 +6,10 @@
 <div class="card-giseca" style="margin-bottom:18px;">
   <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; flex-wrap:wrap; gap:8px;">
     <strong>Inventario valorizado (costo)</strong>
+    <form method="GET" action="{{ route('kardex.index') }}" style="display:flex; gap:8px; margin:0;">
+      <input name="q" value="{{ $q ?? '' }}" class="form-control-giseca" placeholder="Buscar código o descripción" style="width:260px;">
+      <button class="btn-giseca btn-outline btn-sm">Buscar</button>
+    </form>
     <span class="codigo-chip">Total: Bs {{ formatoMoneda($totalValor) }}</span>
   </div>
   <table class="tabla-giseca">
@@ -23,5 +27,6 @@
       @endforeach
     </tbody>
   </table>
+  <div style="margin-top:12px;">{{ $productos->links() }}</div>
 </div>
 @endsection
