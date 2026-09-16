@@ -19,6 +19,7 @@ class Venta extends Model
         'observaciones', 'origen_siat', 'codigo_autorizacion',
         'numero_factura_siat', 'nit_cliente', 'comprobante_numero',
         'sucursal_id', 'punto_venta_id', 'codigo_sucursal', 'codigo_punto_venta',
+        'lead_id',
     ];
 
     protected $casts = [
@@ -45,6 +46,11 @@ class Venta extends Model
     public function cliente(): BelongsTo
     {
         return $this->belongsTo(Cliente::class);
+    }
+
+    public function lead(): BelongsTo
+    {
+        return $this->belongsTo(Lead::class);
     }
 
     public function detalles(): HasMany

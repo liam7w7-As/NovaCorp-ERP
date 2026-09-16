@@ -72,6 +72,11 @@ class Lead extends Model
         return $this->hasMany(MensajeWhatsapp::class)->orderBy('ocurrio_at');
     }
 
+    public function ventas(): HasMany
+    {
+        return $this->hasMany(Venta::class);
+    }
+
     public function ultimoMensajeWhatsapp(): HasOne
     {
         return $this->hasOne(MensajeWhatsapp::class)->latestOfMany('id');

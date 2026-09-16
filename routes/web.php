@@ -112,6 +112,7 @@ Route::middleware(['auth'])->group(function () {
         Route::patch('/leads/{lead}/ficha', [CrmController::class, 'actualizarFicha'])->name('leads.ficha');
         Route::post('/leads/{lead}/mensajes', [CrmController::class, 'enviarMensaje'])->name('leads.mensajes.store');
         Route::post('/leads/{lead}/mensajes/{mensaje}/reintentar', [CrmController::class, 'reintentarMensaje'])->name('leads.mensajes.reintentar');
+        Route::get('/leads/{lead}/convertir', [CrmController::class, 'convertirVenta'])->name('leads.convertir');
     });
     Route::middleware('permiso:crm.administrar')->prefix('crm')->name('crm.')->group(function () {
         Route::get('/diagnostico', [CrmController::class, 'diagnostico'])->name('diagnostico');

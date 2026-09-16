@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\CanalWhatsapp;
+use App\Models\Cliente;
 use App\Models\EtapaCrm;
 use App\Models\Lead;
 use App\Models\MensajeWhatsapp;
@@ -111,6 +112,10 @@ class CrmController extends Controller
                 'motivo_envio' => $puedeEnviar ? null : 'Configura token y Phone Number ID para enviar desde Meta.',
                 'ventana_abierta' => $ventanaAbierta,
                 'motivo_ventana' => $ventanaAbierta ? null : 'Fuera de la ventana de 24h: Meta puede rechazar texto libre (usa respuesta a su último mensaje para reabrirla).',
+                'etapa_tipo' => $lead->etapa->tipo,
+                'cliente_id' => $lead->cliente_id,
+                'puede_convertir' => $lead->etapa->tipo === EtapaCrm::GANADA && Permisos::puede($request->user(), 'ventas'),
+                'convertir_url' => route('crm.leads.convertir', $lead),
                 'ultima_interaccion' => $lead->ultima_interaccion_at?->format('d/m/Y H:i:s'),
                 'creado' => $lead->created_at?->format('d/m/Y H:i:s'),
                 'etapa_actualizada' => $lead->etapa_actualizada_at?->format('d/m/Y H:i:s'),
@@ -255,6 +260,44 @@ class CrmController extends Controller
 
         return redirect()->route('crm.index', $request->only(['q', 'etapa', 'canal']))
             ->with('exito', 'Lead actualizado correctamente.');
+    }
+
+    /**
+     * Convierte un lead GANADO (etapa Compro) en cliente + venta.
+     * Crea el cliente si aún no existe y redirige a ventas.create
+     * con cliente y lead preseleccionados para cargar los items.
+     */
+    public function convertirVenta(Request $request, Lead $lead): RedirectResponse
+    {
+        $usuario = $request->user();
+        $lead = $this->consultaVisible($usuario)->findOrFail($lead->id);
+        $lead->loadMissing('etapa');
+
+        abort_unless(Permisos::puede($usuario, 'ventas'), 403, 'Necesitas permiso de ventas para convertir.');
+        if ($lead->etapa->tipo !== EtapaCrm::GANADA) {
+            return back()->with('error', 'Solo se convierten leads en etapa Compro (ganada).');
+        }
+
+        $cliente = $lead->cliente;
+        if (! $cliente) {
+            $cliente = Cliente::whereRaw('LOWER(nombre) = ?', [mb_strtolower($lead->nombre ?: $lead->telefono)])->first();
+        }
+        if (! $cliente) {
+            $cliente = Cliente::create([
+                'nombre' => $lead->nombre ?: ('Cliente '.$lead->telefono),
+                'telefono' => $lead->telefono,
+                'correo' => $lead->correo,
+                'direccion' => $lead->ciudad,
+            ]);
+            $lead->update(['cliente_id' => $cliente->id]);
+        } elseif (! $lead->cliente_id) {
+            $lead->update(['cliente_id' => $cliente->id]);
+        }
+
+        return redirect()->route('ventas.create', [
+            'cliente_id' => $cliente->id,
+            'lead_id' => $lead->id,
+        ])->with('exito', "Lead convertido: cliente {$cliente->nombre} listo, carga los items de la venta.");
     }
 
     public function canales(): View

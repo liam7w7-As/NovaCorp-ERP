@@ -59,7 +59,7 @@
 | **Códigos de Barras** | `picqer/php-barcode-generator` |
 | **Comunicación Fiscal** | SOAP Client nativo de PHP con soporte WSDL y criptografía `OpenSSL` |
 | **Estándar de Código** | PSR-12 / Laravel Pint (`vendor/bin/pint --format agent`) |
-| **Pruebas Automatizadas** | PHPUnit 12.x (95 pruebas automatizadas de integración y features) |
+| **Pruebas Automatizadas** | PHPUnit 12.x (107 pruebas automatizadas de integración y features) |
 
 ---
 
@@ -496,7 +496,7 @@ php vendor/phpunit/phpunit/phpunit -c phpunit.xml
 
 **Resultado esperado:**
 ```text
-OK (95 tests, 374 assertions)
+OK (107 tests, 411 assertions)
 ```
 
 Las pruebas cubren:
@@ -513,6 +513,8 @@ Las pruebas cubren:
 - Papelera: restaurar re-aplica stock y comprobante (`PapeleraRestoreTest.php`).
 - Seguridad: throttle login, password min 12, reset con clave, scope sucursal, auditoría y CSV (`SeguridadTest.php`).
 - Rendimiento e integridad: kardex, cuentas, reporte CSV, pagos y códigos (`RendimientoIntegridadTest.php`).
+- CRM Meta: ventana 24h, uploads, round-robin, dedupe y tope tablero (`CrmMejorasTest.php`).
+- Conversión CRM→ERP: lead ganado a cliente y venta (`CrmConversionTest.php`).
 
 Para formatear el código conforme a los estándares de Laravel antes de entregar:
 ```bash

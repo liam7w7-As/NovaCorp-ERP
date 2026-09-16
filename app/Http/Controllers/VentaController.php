@@ -4,11 +4,13 @@ namespace App\Http\Controllers;
 
 use App\Models\Cliente;
 use App\Models\Comprobante;
+use App\Models\Lead;
 use App\Models\Producto;
 use App\Models\Sucursal;
 use App\Models\Venta;
 use App\Services\ComprobanteService;
 use App\Services\ContadorService;
+use App\Services\Permisos;
 use App\Services\SiatCsvService;
 use App\Services\StockService;
 use App\Services\SucursalContext;
@@ -64,11 +66,20 @@ class VentaController extends Controller
         ]);
     }
 
-    public function create()
+    public function create(Request $request)
     {
+        $clientePreseleccionado = $request->filled('cliente_id')
+            ? Cliente::find($request->input('cliente_id'))
+            : null;
+        $leadOrigen = $request->filled('lead_id')
+            ? Lead::find($request->input('lead_id'))
+            : null;
+
         return view('ventas.create', [
             'clientes' => Cliente::orderBy('nombre')->get(),
             'fechaHoy' => date('Y-m-d'),
+            'clientePreseleccionado' => $clientePreseleccionado,
+            'leadOrigen' => $leadOrigen,
         ]);
     }
 
@@ -87,6 +98,7 @@ class VentaController extends Controller
             'items.*.producto_id' => 'required|exists:productos,id',
             'items.*.cantidad' => 'required|numeric|min:0.01',
             'items.*.precio' => 'required|numeric|min:0',
+            'lead_id' => 'nullable|exists:leads,id',
         ];
     }
 
@@ -180,6 +192,8 @@ class VentaController extends Controller
 
                     'cliente_nombre' => $cliente->nombre,
 
+                    'lead_id' => $data['lead_id'] ?? null,
+
                     'fecha' => $data['fecha'],
 
                     'subtotal' => $subtotal,
@@ -242,6 +256,8 @@ class VentaController extends Controller
                     $venta->fresh(),
                     $data['metodo'] ?? 'Efectivo'
                 );
+
+                $this->vincularLead($request->user(), $data['lead_id'] ?? null, $venta->fresh(), $cliente->id);
 
                 return [
                     'venta' => $venta,
@@ -377,6 +393,29 @@ class VentaController extends Controller
         }
 
         return redirect()->route('ventas.index')->with('exito', 'Venta actualizada');
+    }
+
+    /**
+     * Si la venta nació de un lead ganado, dejarlo apuntando al cliente.
+     * Solo vincula leads visibles para el usuario (propios o administrables).
+     */
+    protected function vincularLead(mixed $usuario, mixed $leadId, Venta $venta, int $clienteId): void
+    {
+        if (! $leadId || ! $usuario) {
+            return;
+        }
+        $lead = Lead::find($leadId);
+        if (! $lead) {
+            return;
+        }
+        $visible = Permisos::puede($usuario, 'crm.administrar')
+            || (int) $lead->vendedor_id === (int) $usuario->id;
+        if (! $visible) {
+            return;
+        }
+        if (! $lead->cliente_id) {
+            $lead->update(['cliente_id' => $clienteId]);
+        }
     }
 
     protected function sincronizarComprobante(Venta $venta): void

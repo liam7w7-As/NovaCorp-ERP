@@ -23,12 +23,18 @@
                 <select id="v_cliente" name="cliente_id" class="form-control-giseca"
                     data-tomselect="{{ route('clientes.buscar') }}" placeholder="Escribe para buscar cliente...">
                     <option value="">— Seleccionar —</option>
+                    @if (! empty($clientePreseleccionado))
+                        <option value="{{ $clientePreseleccionado->id }}" selected>{{ $clientePreseleccionado->nombre }}</option>
+                    @endif
                     @foreach ($clientes as $c)
                         <option value="{{ $c->id }}"
-                            {{ (isset($venta) && $venta->cliente_id == $c->id) || old('cliente_id') == $c->id ? 'selected' : '' }}>
+                            {{ (isset($venta) && $venta->cliente_id == $c->id) || old('cliente_id') == $c->id || (! empty($clientePreseleccionado) && $clientePreseleccionado->id == $c->id) ? 'selected' : '' }}>
                             {{ $c->nombre }}</option>
                     @endforeach
                 </select>
+                @if (! empty($leadOrigen))
+                    <input type="hidden" name="lead_id" value="{{ $leadOrigen->id }}">
+                @endif
             </div>
             <div><label class="form-label-giseca">Nuevo cliente (opcional)</label><input id="v_clienteNuevo"
                     name="cliente_nuevo" class="form-control-giseca" placeholder="Escribe para crear uno nuevo"
