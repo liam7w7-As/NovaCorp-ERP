@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Auditoria;
 use App\Models\PermisoRol;
 use App\Models\Rol;
 use App\Models\User;
@@ -47,7 +48,7 @@ class UsuarioController extends Controller
         $data = $request->validate([
             'name' => 'required|string|max:255',
             'email' => 'required|email|unique:users,email',
-            'password' => 'required|string|min:6',
+            'password' => 'required|string|min:12',
             'rol' => 'required|exists:roles,clave',
         ]);
 
@@ -71,7 +72,7 @@ class UsuarioController extends Controller
         $data = $request->validate([
             'name' => 'required|string|max:255',
             'email' => 'required|email|unique:users,email,'.$usuario->id,
-            'password' => 'nullable|string|min:6',
+            'password' => 'nullable|string|min:12',
             'rol' => 'required|exists:roles,clave',
             'activo' => 'nullable|boolean',
         ]);
@@ -94,6 +95,7 @@ class UsuarioController extends Controller
             }
         }
 
+        $rolAnterior = $usuario->rol;
         $usuario->update([
             'name' => $data['name'],
             'email' => $data['email'],
@@ -101,7 +103,8 @@ class UsuarioController extends Controller
             'activo' => (bool) ($data['activo'] ?? false),
         ] + ($request->filled('password') ? ['password' => $data['password']] : []));
 
-        Permisos::olvidarCache($usuario->rol);
+        Permisos::olvidarCache($rolAnterior);
+        Permisos::olvidarCache($data['rol']);
 
         return back()->with('exito', 'Usuario actualizado');
     }
@@ -178,6 +181,16 @@ class UsuarioController extends Controller
         $permiso->save();
 
         Permisos::olvidarCache($data['rol']);
+
+        Auditoria::create([
+            'usuario_id' => Auth::id(),
+            'usuario_nombre' => Auth::user()->name ?? 'sistema',
+            'accion' => 'permiso',
+            'modelo' => 'Rol',
+            'modelo_id' => $rol->id,
+            'descripcion' => "{$data['rol']}: {$data['habilidad']} => ".($permiso->permitido ? 'permitido' : 'denegado'),
+            'ip' => $request->ip(),
+        ]);
 
         return response()->json([
             'rol' => $data['rol'],

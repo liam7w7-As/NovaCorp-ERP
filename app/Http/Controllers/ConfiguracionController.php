@@ -16,6 +16,7 @@ use App\Services\SiatService;
 use Database\Seeders\ModulosBaseSeeder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 
@@ -249,7 +250,13 @@ class ConfiguracionController extends Controller
 
             'confirmacion' => 'required|in:REINICIAR',
 
+            'password_actual' => 'required|string',
+
         ]);
+
+        if (! Hash::check($request->input('password_actual'), (string) $request->user()->password)) {
+            return back()->with('error', 'Contraseña incorrecta. No se reinició nada.');
+        }
 
         Schema::disableForeignKeyConstraints();
 

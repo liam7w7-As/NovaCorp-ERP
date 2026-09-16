@@ -23,7 +23,7 @@ class AuthController extends Controller
             if (! Auth::user()->activo) {
                 Auth::logout();
 
-                return back()->withErrors(['email' => 'Usuario desactivado. Contacta al administrador.'])->onlyInput('email');
+                return back()->withErrors(['email' => 'Credenciales incorrectas'])->onlyInput('email');
             }
             $request->session()->regenerate();
 

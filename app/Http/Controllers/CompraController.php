@@ -349,7 +349,7 @@ class CompraController extends Controller
      */
     public function importarExcel(Request $request, ContadorService $contadores, StockService $stock, ComprobanteService $comprobantes)
     {
-        $data = $request->validate(['filas' => 'required|array|min:1']);
+        $data = $request->validate(['filas' => 'required|array|min:1|max:2000']);
         $res = $this->importarGenericoFilas($data['filas'], $contadores, $stock, $comprobantes);
 
         return $this->respuestaImportacion($request, $res, 'compra(s)');

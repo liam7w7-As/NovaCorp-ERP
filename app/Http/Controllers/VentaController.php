@@ -280,6 +280,7 @@ class VentaController extends Controller
 
     public function update(Request $request, Venta $venta, StockService $stock)
     {
+        SucursalContext::autorizaSucursal($venta->sucursal_id);
         if ($venta->origen_siat) {
             $data = $request->validate([
                 'cliente_nombre' => 'required|string|max:255',
@@ -396,6 +397,7 @@ class VentaController extends Controller
 
     public function anular(Venta $venta, StockService $stock)
     {
+        SucursalContext::autorizaSucursal($venta->sucursal_id);
         if ($venta->estado === 'anulada') {
             return back()->with('error', 'La venta ya está anulada.');
         }
@@ -417,6 +419,7 @@ class VentaController extends Controller
 
     public function destroy(Venta $venta, StockService $stock)
     {
+        SucursalContext::autorizaSucursal($venta->sucursal_id);
         DB::transaction(function () use ($venta, $stock) {
             $venta->load('detalles.producto');
             if ($venta->estado === 'activa' && ! $venta->origen_siat) {
@@ -473,7 +476,7 @@ class VentaController extends Controller
 
     public function importarExcel(Request $request, ContadorService $contadores, StockService $stock, ComprobanteService $comprobantes)
     {
-        $data = $request->validate(['filas' => 'required|array|min:1']);
+        $data = $request->validate(['filas' => 'required|array|min:1|max:2000']);
         $res = $this->importarGenericoFilas($data['filas'], $contadores, $stock, $comprobantes);
         if (! empty($res['bloqueado_stock'])) {
             if ($request->expectsJson()) {

@@ -293,8 +293,9 @@ object-fit:contain;
       </div>
       <form method="POST" action="{{ route('configuracion.resetear') }}" onsubmit="return confirm('Esto borrará TODOS los datos (productos, clientes, compras, ventas, etc.) y los reiniciará con datos de ejemplo. ¿Continuar?')">
         @csrf
-        <div style="display:flex; gap:8px; margin-top:14px; align-items:center;">
+        <div style="display:flex; gap:8px; margin-top:14px; align-items:center; flex-wrap:wrap;">
           <input name="confirmacion" class="form-control-giseca" placeholder="Escribe REINICIAR para confirmar" style="max-width:220px;" required>
+          <input type="password" name="password_actual" class="form-control-giseca" placeholder="Tu contraseña actual" style="max-width:220px;" required autocomplete="current-password">
           <button class="btn-giseca btn-outline btn-sm"><i class="bi bi-arrow-counterclockwise"></i> Reiniciar datos</button>
         </div>
       </form>

@@ -2,7 +2,9 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Auditoria;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
 
 class RespaldoController extends Controller
@@ -27,6 +29,17 @@ class RespaldoController extends Controller
         $codigo = Artisan::call('backup:database');
         $salida = trim(Artisan::output());
 
+        if ($codigo === 0) {
+            Auditoria::create([
+                'usuario_id' => Auth::id(),
+                'usuario_nombre' => Auth::user()->name ?? 'sistema',
+                'accion' => 'respaldo',
+                'modelo' => 'Respaldo',
+                'descripcion' => $salida,
+                'ip' => request()->ip(),
+            ]);
+        }
+
         return back()->with(
             $codigo === 0 ? 'exito' : 'error',
             $codigo === 0 ? $salida : 'Falló el respaldo. '.$salida
@@ -39,6 +52,15 @@ class RespaldoController extends Controller
         if (! str_ends_with($nombre, '.sql') || ! Storage::exists('respaldos/'.$nombre)) {
             abort(404);
         }
+
+        Auditoria::create([
+            'usuario_id' => Auth::id(),
+            'usuario_nombre' => Auth::user()->name ?? 'sistema',
+            'accion' => 'descarga',
+            'modelo' => 'Respaldo',
+            'descripcion' => $nombre,
+            'ip' => request()->ip(),
+        ]);
 
         return Storage::download('respaldos/'.$nombre);
     }

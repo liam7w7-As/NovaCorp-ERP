@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\PuntoVenta;
+use App\Models\Rol;
 use App\Models\Sucursal;
 use Illuminate\Support\Facades\Auth;
 
@@ -91,5 +92,21 @@ class SucursalContext
                 session()->forget('punto_venta_activo_id');
             }
         }
+    }
+
+    /**
+     * Autoriza operar un documento de una sucursal: admin/superadmin siempre,
+     * usuarios sin sucursal asignada por compatibilidad, el resto solo la suya.
+     */
+    public static function autorizaSucursal(?int $sucursalId): void
+    {
+        $usuario = Auth::user();
+        if (! $usuario || ($usuario->rol ?? null) === Rol::OCULTO || ($usuario->rol ?? null) === 'admin') {
+            return;
+        }
+        if (! $usuario->sucursal_id || ! $sucursalId) {
+            return;
+        }
+        abort_if((int) $usuario->sucursal_id !== (int) $sucursalId, 403, 'Documento de otra sucursal.');
     }
 }

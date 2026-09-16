@@ -13,7 +13,7 @@ class Auditoria extends Model
 
     protected $casts = ['cambios' => 'array'];
 
-    public const ACCIONES = ['creado', 'actualizado', 'eliminado', 'restaurado'];
+    public const ACCIONES = ['creado', 'actualizado', 'eliminado', 'restaurado', 'permiso', 'respaldo', 'descarga', 'anulacion', 'reversion'];
 
     public function usuario()
     {

@@ -3,11 +3,13 @@
 namespace App\Http\Controllers;
 
 use App\Mail\FacturaCorreo;
+use App\Models\Auditoria;
 use App\Models\Configuracion;
 use App\Models\FacturaElectronica;
 use App\Models\Sucursal;
 use App\Models\Venta;
 use App\Services\FacturaService;
+use App\Services\SucursalContext;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Mail;
@@ -71,6 +73,7 @@ class FacturaController extends Controller
      */
     public function emitir(Request $request, Venta $venta, FacturaService $facturas)
     {
+        SucursalContext::autorizaSucursal($venta->sucursal_id);
         $data = $request->validate([
             'contingencia' => 'nullable|boolean',
         ]);
@@ -132,6 +135,7 @@ class FacturaController extends Controller
 
     public function emitirNota(Request $request, FacturaElectronica $factura, FacturaService $facturas)
     {
+        SucursalContext::autorizaSucursal($factura->sucursal_id);
         $data = $request->validate([
             'tipo' => 'required|in:debito,credito',
             'monto' => 'required|numeric|min:0.01',
@@ -149,6 +153,7 @@ class FacturaController extends Controller
 
     public function anular(Request $request, FacturaElectronica $factura, FacturaService $facturas)
     {
+        SucursalContext::autorizaSucursal($factura->sucursal_id);
         $data = $request->validate([
             'motivo' => 'nullable|integer|min:1|max:5',
         ]);
@@ -161,11 +166,22 @@ class FacturaController extends Controller
             return back()->with('error', 'Error comunicando al SIN: '.$e->getMessage());
         }
 
+        Auditoria::create([
+            'usuario_id' => auth()->id(),
+            'usuario_nombre' => auth()->user()->name ?? 'sistema',
+            'accion' => 'anulacion',
+            'modelo' => 'FacturaElectronica',
+            'modelo_id' => $factura->id,
+            'descripcion' => $factura->numero_factura.' (motivo '.($data['motivo'] ?? 1).')',
+            'ip' => $request->ip(),
+        ]);
+
         return back()->with('exito', 'Factura anulada ante el SIN.'.$this->enviarCorreo($factura->fresh(), 'anulada'));
     }
 
     public function revertir(Request $request, FacturaElectronica $factura, FacturaService $facturas)
     {
+        SucursalContext::autorizaSucursal($factura->sucursal_id);
         try {
             $facturas->revertirAnulacion($factura);
         } catch (\InvalidArgumentException $e) {
@@ -173,6 +189,16 @@ class FacturaController extends Controller
         } catch (\Throwable $e) {
             return back()->with('error', 'Error comunicando al SIN: '.$e->getMessage());
         }
+
+        Auditoria::create([
+            'usuario_id' => auth()->id(),
+            'usuario_nombre' => auth()->user()->name ?? 'sistema',
+            'accion' => 'reversion',
+            'modelo' => 'FacturaElectronica',
+            'modelo_id' => $factura->id,
+            'descripcion' => $factura->numero_factura,
+            'ip' => $request->ip(),
+        ]);
 
         return back()->with('exito', 'Anulación revertida: la factura vuelve a EMITIDA');
     }
@@ -188,7 +214,15 @@ class FacturaController extends Controller
         }
 
         $lineas = ['Numero,CUF,Sucursal,PuntoVenta,Cliente,NIT,Fecha,Total,Recepcion'];
-        $esc = fn ($v) => '"'.str_replace('"', '""', (string) $v).'"';
+        // Anti CSV-injection: neutralizar celdas que empiezan con = + - @ (Excel las ejecutaría).
+        $esc = function ($v) {
+            $v = (string) $v;
+            if (preg_match('/^[=+\-@\t\r]/', $v)) {
+                $v = "'".$v;
+            }
+
+            return '"'.str_replace('"', '""', $v).'"';
+        };
         foreach ($query->get() as $f) {
             $lineas[] = implode(',', [
                 $f->numero_factura,

@@ -138,6 +138,10 @@ class ProductoController extends Controller
      */
     public function importar(Request $request, StockService $stock)
     {
+        $request->validate([
+            'productos' => 'sometimes|array|max:1000',
+            'filas' => 'sometimes|array|max:1000',
+        ]);
         $filas = $request->input('productos', $request->input('filas', []));
 
         if (! is_array($filas) || empty($filas)) {

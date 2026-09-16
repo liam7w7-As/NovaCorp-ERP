@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Services\Permisos;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Str;
 
 class RolesPermisosSeeder extends Seeder
 {
@@ -36,14 +37,18 @@ class RolesPermisosSeeder extends Seeder
 
         Permisos::olvidarCache();
 
-        User::updateOrCreate(
-            ['email' => 'superadmin@giseca.com'],
-            [
-                'name' => 'Super Administrador',
-                'password' => Hash::make('super123'),
-                'rol' => Rol::OCULTO,
-                'activo' => true,
-            ]
-        );
+        if (! User::where('email', 'superadmin@giseca.com')->exists()) {
+            $clave = Str::random(20);
+            User::create(
+                [
+                    'name' => 'Super Administrador',
+                    'email' => 'superadmin@giseca.com',
+                    'password' => Hash::make($clave),
+                    'rol' => Rol::OCULTO,
+                    'activo' => true,
+                ]
+            );
+            $this->command?->warn("Superadmin creado con clave inicial: {$clave} (guárdala, no se vuelve a mostrar).");
+        }
     }
 }

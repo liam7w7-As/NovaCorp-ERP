@@ -4,6 +4,7 @@ namespace App\Traits;
 
 use App\Models\Auditoria;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 
 /**
  * Registra created/updated/deleted/restored en la tabla auditorias.
@@ -43,8 +44,9 @@ trait Auditable
                 'cambios' => $cambios,
                 'ip' => request()->ip(),
             ]);
-        } catch (\Throwable) {
-            // La auditoría nunca debe romper la operación
+        } catch (\Throwable $e) {
+            // La auditoría nunca debe romper la operación, pero tampoco fallar en silencio
+            Log::warning('Auditoría no registrada', ['error' => $e->getMessage()]);
         }
     }
 

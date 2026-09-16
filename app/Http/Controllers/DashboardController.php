@@ -145,7 +145,15 @@ class DashboardController extends Controller
 
         $lineas = [];
         $lineas[] = 'Tipo,Numero,Fecha,Entidad,Total';
-        $esc = fn ($v) => '"'.str_replace('"', '""', (string) $v).'"';
+        // Anti CSV-injection: neutralizar celdas que empiezan con = + - @ (Excel las ejecutaría).
+        $esc = function ($v) {
+            $v = (string) $v;
+            if (preg_match('/^[=+\-@\t\r]/', $v)) {
+                $v = "'".$v;
+            }
+
+            return '"'.str_replace('"', '""', $v).'"';
+        };
 
         foreach (Venta::where('fecha', 'like', "{$mes}%")->orderBy('fecha')->get() as $v) {
             $lineas[] = implode(',', ['VENTA', $v->numero, $v->fecha->format('Y-m-d'), $esc($v->cliente_nombre), $v->total, $v->estado]);
