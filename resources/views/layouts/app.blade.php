@@ -97,6 +97,12 @@
 </head>
 
 <body>
+  {{-- Combinación peligrosa heredada: simular en producción genera PDFs sin valor fiscal --}}
+  @if(\App\Services\SiatConfig::get('siat_modo') !== 'real' && \App\Services\SiatConfig::get('siat_ambiente') === 'produccion')
+    <div style="background:#dc3545;color:#fff;text-align:center;padding:8px 12px;font-weight:700;font-size:13px;">
+      ⚠ SIMULADOR activo con ambiente PRODUCCIÓN: las facturas NO tienen valor fiscal. Cambia a modo REAL en Configuración.
+    </div>
+  @endif
   <div class="gc-sidebar-overlay" id="gcSidebarOverlay" onclick="gcCerrarSidebar()"></div>
   <div class="gc-shell">
     <aside class="gc-sidebar" id="gcSidebar">

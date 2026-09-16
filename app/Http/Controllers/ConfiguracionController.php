@@ -321,7 +321,7 @@ class ConfiguracionController extends Controller
 
             'siat_cert_password' => 'nullable|string|max:255',
 
-            'siat_token' => 'nullable|string|max:1000',
+            'siat_token' => 'nullable|string|max:4000',
 
             'siat_certificado' => 'nullable|file|mimetypes:application/x-pkcs12,application/octet-stream|max:2048',
 
@@ -333,6 +333,15 @@ class ConfiguracionController extends Controller
             $guardar['siat_certificado'],
             $guardar['_token']
         );
+
+        // Combinación peligrosa: simular facturas en ambiente de producción
+        // genera documentos sin valor fiscal que parecen oficiales.
+        if (($guardar['siat_modo'] ?? '') === 'simulador' && ($guardar['siat_ambiente'] ?? '') === 'produccion') {
+            return back()->withInput()->with(
+                'error',
+                'Combinación no permitida: el SIMULADOR no puede usarse con ambiente PRODUCCIÓN. Usa modo REAL con credenciales del SIN.'
+            );
+        }
 
         if ($request->hasFile('siat_certificado')) {
 

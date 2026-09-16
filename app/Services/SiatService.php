@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Configuracion;
 use App\Models\EventoSiat;
 use App\Models\PuntoVenta;
+use Illuminate\Support\Facades\Storage;
 use SoapClient;
 use Throwable;
 
@@ -223,13 +224,13 @@ class SiatService
 
         $cadena = str_pad($nit, 13, '0', STR_PAD_LEFT)
             .$fechaHora
-           .$sucursal
-            .$modalidad
-            .$emision
-            .$tipoFactura
-            .$docSector
-            .$numeroFactura
-            .$puntoVenta;
+            .str_pad($sucursal, 4, '0', STR_PAD_LEFT)
+            .str_pad((string) $modalidad, 1, '0', STR_PAD_LEFT)
+            .str_pad((string) $emision, 1, '0', STR_PAD_LEFT)
+            .str_pad((string) $tipoFactura, 1, '0', STR_PAD_LEFT)
+            .str_pad((string) $docSector, 2, '0', STR_PAD_LEFT)
+            .str_pad($numeroFactura, 10, '0', STR_PAD_LEFT)
+            .str_pad($puntoVenta, 4, '0', STR_PAD_LEFT);
 
         $digito = self::modulo11($cadena);
         $cuf = self::decimalAHex($cadena.$digito);
@@ -345,12 +346,18 @@ class SiatService
             return null;
         }
 
-        return storage_path('app/public/'.$rel);
+        // El .p12 se guarda con Storage::disk('local') (storage/app/private/).
+        return Storage::disk('local')->path($rel);
     }
 
     // ---------------- Recepción de factura ----------------
 
-    public function recepcionFactura(string $xmlFirmado, string $cuf, string $numeroFactura, \DateTimeInterface $fechaEmision, int $emision = 1, ?string $cafc = null): array
+    /**
+     * $contexto: identidad fiscal del punto de venta emisor
+     * ['codigoSucursal', 'codigoPuntoVenta', 'cufd', 'cuis'].
+     * Si se omite, usa los valores globales de SiatConfig (Casa Matriz).
+     */
+    public function recepcionFactura(string $xmlFirmado, string $cuf, string $numeroFactura, \DateTimeInterface $fechaEmision, int $emision = 1, ?string $cafc = null, array $contexto = []): array
     {
         $hash = hash('sha256', $xmlFirmado);
         $params = [
@@ -358,11 +365,11 @@ class SiatService
             'codigoDocumentoSector' => 1,
             'codigoEmision' => $emision,
             'codigoModalidad' => SiatConfig::codigoModalidadSin(),
-            'codigoPuntoVenta' => (int) SiatConfig::get('siat_punto_venta', '0'),
+            'codigoPuntoVenta' => (int) ($contexto['codigoPuntoVenta'] ?? SiatConfig::get('siat_punto_venta', '0')),
             'codigoSistema' => (string) SiatConfig::get('siat_codigo_sistema'),
-            'codigoSucursal' => (int) SiatConfig::get('siat_sucursal', '0'),
-            'cufd' => $emision === 2 ? null : (string) SiatConfig::get('siat_cufd'),
-            'cuis' => (string) SiatConfig::get('siat_cuis'),
+            'codigoSucursal' => (int) ($contexto['codigoSucursal'] ?? SiatConfig::get('siat_sucursal', '0')),
+            'cufd' => $emision === 2 ? null : (string) ($contexto['cufd'] ?? SiatConfig::get('siat_cufd')),
+            'cuis' => (string) ($contexto['cuis'] ?? SiatConfig::get('siat_cuis')),
             'nit' => (int) SiatConfig::get('siat_nit'),
             'tipoFacturaDocumento' => 1,
             'archivo' => base64_encode(gzencode($xmlFirmado)),
@@ -413,18 +420,18 @@ class SiatService
 
     // ---------------- Anulación ----------------
 
-    public function anulacionFactura(string $cuf, int $codigoMotivo = 1): array
+    public function anulacionFactura(string $cuf, int $codigoMotivo = 1, array $contexto = []): array
     {
         $params = [
             'codigoAmbiente' => SiatConfig::codigoAmbienteSin(),
             'codigoDocumentoSector' => 1,
             'codigoEmision' => 1,
             'codigoModalidad' => SiatConfig::codigoModalidadSin(),
-            'codigoPuntoVenta' => (int) SiatConfig::get('siat_punto_venta', '0'),
+            'codigoPuntoVenta' => (int) ($contexto['codigoPuntoVenta'] ?? SiatConfig::get('siat_punto_venta', '0')),
             'codigoSistema' => (string) SiatConfig::get('siat_codigo_sistema'),
-            'codigoSucursal' => (int) SiatConfig::get('siat_sucursal', '0'),
-            'cufd' => (string) SiatConfig::get('siat_cufd'),
-            'cuis' => (string) SiatConfig::get('siat_cuis'),
+            'codigoSucursal' => (int) ($contexto['codigoSucursal'] ?? SiatConfig::get('siat_sucursal', '0')),
+            'cufd' => (string) ($contexto['cufd'] ?? SiatConfig::get('siat_cufd')),
+            'cuis' => (string) ($contexto['cuis'] ?? SiatConfig::get('siat_cuis')),
             'nit' => (int) SiatConfig::get('siat_nit'),
             'tipoFacturaDocumento' => 1,
             'codigoMotivo' => $codigoMotivo,

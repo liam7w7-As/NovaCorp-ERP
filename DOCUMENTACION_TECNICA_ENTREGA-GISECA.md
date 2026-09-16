@@ -214,7 +214,7 @@ Existen dos vías para configurar los parámetros:
 4. Completar los campos con los datos oficiales entregados por el SIN:
    - **Modo:** Cambiar a `Real (SIN)` para conectar con los servidores tributarios (dejar en `Simulador` para pruebas internas sin internet).
    - **Ambiente:** Seleccionar `Pruebas (piloto)` para ambiente de pruebas/homologación, o `Producción` para emisión fiscal real.
-   - **Modalidad:** `Electrónica en Línea` (modalidad por defecto de GISECA).
+    - **Modalidad:** `Computarizada en Línea` (modalidad por defecto de GISECA; sin firma ni certificado). Cambiar a `Electrónica en Línea` solo si se cuenta con certificado digital `.p12`.
    - **NIT emisor:** Ingresar el NIT de la empresa (solo números).
    - **Razón social:** Nombre o razón social idéntica a la registrada en el Padrón Nacional de Contribuyentes.
    - **Código de sistema:** Código alfanumérico otorgado por el SIN al registrar el sistema informático de la empresa.
@@ -481,25 +481,7 @@ Cuando la empresa obtenga las credenciales oficiales otorgadas por el SIN:
 
 ### 9.2. Automatizaciones Recomendadas (Cron / Scheduler)
 
-El CUFD vence todos los días a la medianoche (24 horas de vigencia). Se recomienda crear un comando en Laravel:
-```bash
-php artisan make:command RenovarCufdDiario
-```
-E invocarlo en `app/Console/Kernel.php` (o `routes/console.php` en Laravel 11/13):
-```php
-use App\Models\PuntoVenta;
-use App\Services\SiatService;
-use Illuminate\Support\Facades\Schedule;
-
-Schedule::call(function () {
-    $siat = app(SiatService::class);
-    foreach (PuntoVenta::activos()->get() as $pos) {
-        $siat->solicitarCufd($pos->sucursal->codigo, $pos->codigo, $pos->cuis, $pos->id);
-    }
-})->dailyAt('00:05');
-```
-
-En el servidor Windows (XAMPP) configurar una Tarea Programada de Windows, o en Linux (Crontab):
+El CUFD vence todos los días a la medianoche (24 horas de vigencia). Ya existe el comando `siat:renovar-cufd` (`app/Console/Commands/RenovarCufdDiario.php`), programado en `routes/console.php` todos los días a las 00:05. Solo falta activar el scheduler del servidor:
 ```cron
 * * * * * cd /ruta/al/proyecto && php artisan schedule:run >> /dev/null 2>&1
 ```

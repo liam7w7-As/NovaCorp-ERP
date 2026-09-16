@@ -78,11 +78,20 @@ class FacturaService
             fn ($n) => FacturaElectronica::where('numero_factura', $n)->exists()
         );
         $correlativoStr = substr($numero, strlen($prefijo));
-        $numeroFactura = (string) ((int) preg_replace('/\D/', '', $correlativoStr) ?: 1);
+        // Mantener como cadena numérica (sin castear a int) para no perder
+        // ceros que el CUF exige en sus anchos fijos.
+        $numeroFactura = preg_replace('/\D/', '', $correlativoStr) ?: '1';
         $fechaEmision = now();
         $fechaHoraCuf = $fechaEmision->format('YmdHis').substr($fechaEmision->format('u'), 0, 3);
 
         $cufdActual = $emision === 2 ? null : ($puntoVenta->cufd ?: (string) SiatConfig::get('siat_cufd'));
+
+        // Sin CUFD vigente no se emite (igual que exige el SIN en línea).
+        if ($emision === 1 && ! $this->tieneCufdVigente($puntoVenta, $cufdActual)) {
+            throw new InvalidArgumentException(
+                'El punto de venta no tiene CUFD vigente. Solicítalo en Sucursales antes de emitir.'
+            );
+        }
 
         $cuf = $this->siat->generarCuf(
             (string) SiatConfig::get('siat_nit', '0'),
@@ -100,7 +109,15 @@ class FacturaService
 
         try {
             $firmado = $this->siat->firmarXml($xml);
-            $resp = $this->siat->recepcionFactura($firmado, $cuf, $numeroFactura, $fechaEmision, $emision, $cafc);
+            $resp = $this->siat->recepcionFactura(
+                $firmado, $cuf, $numeroFactura, $fechaEmision, $emision, $cafc,
+                [
+                    'codigoSucursal' => $codigoSucursal,
+                    'codigoPuntoVenta' => $codigoPuntoVenta,
+                    'cufd' => $cufdActual,
+                    'cuis' => $puntoVenta->cuis,
+                ]
+            );
         } catch (Throwable $e) {
             // Dejar constancia del intento fallido (fuera de la transacción revertida)
             $fallida = FacturaElectronica::create([
@@ -231,7 +248,13 @@ class FacturaService
             throw new InvalidArgumentException('Solo se puede anular una factura EMITIDA.');
         }
 
-        $resp = $this->siat->anulacionFactura((string) $factura->cuf, $codigoMotivo);
+        $factura->loadMissing('puntoVenta');
+        $resp = $this->siat->anulacionFactura((string) $factura->cuf, $codigoMotivo, [
+            'codigoSucursal' => $factura->codigo_sucursal,
+            'codigoPuntoVenta' => $factura->codigo_punto_venta,
+            'cufd' => $factura->cufd,
+            'cuis' => $factura->puntoVenta?->cuis,
+        ]);
         if (! ($resp['transaccion'] ?? false)) {
             throw new InvalidArgumentException('El SIN no aceptó la anulación: '.($resp['codigoDescripcion'] ?? 'sin detalle'));
         }
@@ -277,6 +300,27 @@ class FacturaService
             'siat_leyenda',
             'Ley N° 453: Tienes derecho a recibir información sobre las características y contenidos de los productos.'
         );
+    }
+
+    /**
+     * ¿Hay CUFD vigente para emitir en este punto de venta?
+     * Revisa el PV y, como respaldo, el CUFD global de Casa Matriz.
+     */
+    protected function tieneCufdVigente(?PuntoVenta $puntoVenta, ?string $cufdActual): bool
+    {
+        if ($cufdActual === null || $cufdActual === '') {
+            return false;
+        }
+        if ($puntoVenta?->cufd && $puntoVenta->cufd === $cufdActual) {
+            return $puntoVenta->tieneCufdVigente();
+        }
+        try {
+            $vigencia = (string) SiatConfig::get('siat_cufd_vigencia', '');
+
+            return $vigencia !== '' && Carbon::parse($vigencia)->isFuture();
+        } catch (Throwable) {
+            return false;
+        }
     }
 
     protected function construirXml(

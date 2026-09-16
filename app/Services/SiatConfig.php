@@ -45,7 +45,7 @@ class SiatConfig
     {
         foreach (['siat_nit', 'siat_razon_social', 'siat_modo', 'siat_ambiente', 'siat_modalidad',
             'siat_codigo_sistema', 'siat_sucursal', 'siat_punto_venta', 'siat_telefono',
-            'siat_direccion', 'siat_ciudad', 'siat_cafc'] as $k) {
+            'siat_direccion', 'siat_ciudad', 'siat_cafc', 'siat_leyenda'] as $k) {
             if (array_key_exists($k, $datos)) {
                 Configuracion::set($k, $datos[$k], 'text');
             }

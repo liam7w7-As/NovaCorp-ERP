@@ -52,19 +52,19 @@ class PuntoVenta extends Model
 
     public function tieneCuisVigente(): bool
     {
-        if (empty($this->cuis)) {
+        if (empty($this->cuis) || ! $this->cuis_vigencia) {
             return false;
         }
 
-        return ! $this->cuis_vigencia || $this->cuis_vigencia->isFuture();
+        return $this->cuis_vigencia->isFuture();
     }
 
     public function tieneCufdVigente(): bool
     {
-        if (empty($this->cufd)) {
+        if (empty($this->cufd) || ! $this->cufd_vigencia) {
             return false;
         }
 
-        return ! $this->cufd_vigencia || $this->cufd_vigencia->isFuture();
+        return $this->cufd_vigencia->isFuture();
     }
 }
