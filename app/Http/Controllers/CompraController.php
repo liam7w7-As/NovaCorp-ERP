@@ -203,57 +203,62 @@ class CompraController extends Controller
         $data = $request->validate($this->reglasItems());
         $proveedor = $this->resolverProveedor($request);
 
-        DB::transaction(function () use ($data, $request, $compra, $proveedor, $stock) {
-            // Revertir stock anterior
-            foreach ($compra->detalles as $det) {
-                if ($det->producto) {
-                    $stock->revertirStock($det->producto, (float) $det->cantidad, 'compra');
+        try {
+            DB::transaction(function () use ($data, $request, $compra, $proveedor, $stock) {
+                // Revertir stock anterior
+                $compra->load('detalles.producto');
+                foreach ($compra->detalles as $det) {
+                    if ($det->producto) {
+                        $stock->revertirStock($det->producto, (float) $det->cantidad, 'compra');
+                    }
                 }
-            }
-            $compra->detalles()->delete();
+                $compra->detalles()->delete();
 
-            $subtotal = 0;
-            $detalles = [];
-            foreach ($data['items'] as $it) {
-                $producto = Producto::findOrFail($it['producto_id']);
-                $cantidad = round((float) $it['cantidad'], 2);
-                $costo = round((float) $it['costo'], 2);
-                $sub = round($cantidad * $costo, 2);
-                $subtotal = round($subtotal + $sub, 2);
-                $detalles[] = compact('producto', 'cantidad', 'costo', 'sub');
-            }
-            $descuento = round((float) ($data['descuento'] ?? 0), 2);
-            $total = max(0, round($subtotal - $descuento, 2));
+                $subtotal = 0;
+                $detalles = [];
+                foreach ($data['items'] as $it) {
+                    $producto = Producto::findOrFail($it['producto_id']);
+                    $cantidad = round((float) $it['cantidad'], 2);
+                    $costo = round((float) $it['costo'], 2);
+                    $sub = round($cantidad * $costo, 2);
+                    $subtotal = round($subtotal + $sub, 2);
+                    $detalles[] = compact('producto', 'cantidad', 'costo', 'sub');
+                }
+                $descuento = round((float) ($data['descuento'] ?? 0), 2);
+                $total = max(0, round($subtotal - $descuento, 2));
 
-            $compra->update([
-                'tipo' => $data['tipo'],
-                'modalidad' => $data['modalidad'] ?? $compra->modalidad ?? 'contado',
-                'proveedor_id' => $proveedor->id,
-                'proveedor_nombre' => $proveedor->nombre,
-                'fecha' => $data['fecha'],
-                'subtotal' => $subtotal,
-                'descuento' => $descuento,
-                'total' => $total,
-                'base_cf' => $data['tipo'] === 'con_factura' ? $total : null,
-                'credito_fiscal' => $data['tipo'] === 'con_factura' ? round($total * 0.13, 2) : null,
-                'observaciones' => $request->input('observaciones'),
-            ]);
-
-            foreach ($detalles as $d) {
-                $compra->detalles()->create([
-                    'producto_id' => $d['producto']->id,
-                    'codigo_producto' => $d['producto']->codigo,
-                    'descripcion_producto' => $d['producto']->descripcion,
-                    'cantidad' => $d['cantidad'],
-                    'precio_unitario' => $d['costo'],
-                    'subtotal' => $d['sub'],
+                $compra->update([
+                    'tipo' => $data['tipo'],
+                    'modalidad' => $data['modalidad'] ?? $compra->modalidad ?? 'contado',
+                    'proveedor_id' => $proveedor->id,
+                    'proveedor_nombre' => $proveedor->nombre,
+                    'fecha' => $data['fecha'],
+                    'subtotal' => $subtotal,
+                    'descuento' => $descuento,
+                    'total' => $total,
+                    'base_cf' => $data['tipo'] === 'con_factura' ? $total : null,
+                    'credito_fiscal' => $data['tipo'] === 'con_factura' ? round($total * 0.13, 2) : null,
+                    'observaciones' => $request->input('observaciones'),
                 ]);
-                $d['producto']->update(['costo' => $d['costo']]);
-                $stock->aumentarStock($d['producto']->fresh(), $d['cantidad']);
-            }
 
-            $this->sincronizarComprobante($compra->fresh());
-        });
+                foreach ($detalles as $d) {
+                    $compra->detalles()->create([
+                        'producto_id' => $d['producto']->id,
+                        'codigo_producto' => $d['producto']->codigo,
+                        'descripcion_producto' => $d['producto']->descripcion,
+                        'cantidad' => $d['cantidad'],
+                        'precio_unitario' => $d['costo'],
+                        'subtotal' => $d['sub'],
+                    ]);
+                    $d['producto']->update(['costo' => $d['costo']]);
+                    $stock->aumentarStock($d['producto']->fresh(), $d['cantidad']);
+                }
+
+                $this->sincronizarComprobante($compra->fresh());
+            });
+        } catch (\InvalidArgumentException $e) {
+            return back()->withInput()->with('error', $e->getMessage());
+        }
 
         return redirect()->route('compras.index')->with('exito', 'Compra actualizada');
     }
@@ -280,17 +285,22 @@ class CompraController extends Controller
 
     public function destroy(Compra $compra, StockService $stock)
     {
-        DB::transaction(function () use ($compra, $stock) {
-            if (! $compra->origen_siat) {
-                foreach ($compra->detalles as $det) {
-                    if ($det->producto) {
-                        $stock->revertirStock($det->producto, (float) $det->cantidad, 'compra');
+        try {
+            DB::transaction(function () use ($compra, $stock) {
+                $compra->load('detalles.producto');
+                if (! $compra->origen_siat) {
+                    foreach ($compra->detalles as $det) {
+                        if ($det->producto) {
+                            $stock->revertirStock($det->producto, (float) $det->cantidad, 'compra');
+                        }
                     }
                 }
-            }
-            Comprobante::where('origen_compra_id', $compra->id)->delete();
-            $compra->delete();
-        });
+                Comprobante::where('origen_compra_id', $compra->id)->delete();
+                $compra->delete();
+            });
+        } catch (\InvalidArgumentException $e) {
+            return back()->with('error', $e->getMessage());
+        }
 
         return redirect()->route('compras.index')->with('exito', 'Compra eliminada');
     }

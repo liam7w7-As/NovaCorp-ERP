@@ -3,7 +3,9 @@
 namespace App\Http\Controllers;
 
 use App\Models\Producto;
+use App\Services\StockService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Picqer\Barcode\BarcodeGeneratorHTML;
 
 class ProductoController extends Controller
@@ -67,7 +69,7 @@ class ProductoController extends Controller
             'unidad_sin' => 'nullable|string|max:10',
             'costo' => 'nullable|numeric|min:0',
             'precio' => 'nullable|numeric|min:0',
-            'stock' => 'nullable|numeric',
+            'stock' => 'nullable|numeric|min:0',
             'stock_min' => 'nullable|numeric|min:0',
         ];
     }
@@ -134,7 +136,7 @@ class ProductoController extends Controller
      * POST /productos/importar — recibe { productos: [ {Codigo, Equivalente, ...} ] }
      * Replica DB.importarProductosExcel: si el código existe actualiza y SUMA stock; si no, crea.
      */
-    public function importar(Request $request)
+    public function importar(Request $request, StockService $stock)
     {
         $filas = $request->input('productos', $request->input('filas', []));
 
@@ -192,24 +194,34 @@ class ProductoController extends Controller
                 $equivalente = trim((string) $obtener($fila, ['Equivalente']));
                 $marca = trim((string) $obtener($fila, ['Marca']));
                 $unidad = trim((string) $obtener($fila, ['Unidad'])) ?: 'PZA';
-                $costo = (float) ($obtener($fila, ['Costo']) ?: 0);
-                $precio = (float) ($obtener($fila, ['PrecioVenta', 'Precio Venta', 'Precio']) ?: 0);
-                $stockExcel = (float) ($obtener($fila, ['Stock']) ?: 0);
-                $stockMin = (float) ($obtener($fila, ['StockMinimo', 'Stock Minimo', 'Stock Mínimo']) ?: 0);
+                $costoRaw = $obtener($fila, ['Costo']);
+                $precioRaw = $obtener($fila, ['PrecioVenta', 'Precio Venta', 'Precio']);
+                $stockRaw = $obtener($fila, ['Stock']);
+                $stockMinRaw = $obtener($fila, ['StockMinimo', 'Stock Minimo', 'Stock Mínimo']);
+                $costo = (float) ($costoRaw === '' ? 0 : $costoRaw);
+                $precio = (float) ($precioRaw === '' ? 0 : $precioRaw);
+                $stockExcel = (float) ($stockRaw === '' ? 0 : $stockRaw);
+                $stockMin = (float) ($stockMinRaw === '' ? 0 : $stockMinRaw);
 
                 $existente = Producto::whereRaw('LOWER(codigo) = ?', [mb_strtolower($codigo)])->first();
 
                 if ($existente) {
-                    $existente->update([
-                        'descripcion' => $descripcion,
-                        'equivalente' => $equivalente ?: $existente->equivalente,
-                        'marca' => $marca ?: $existente->marca,
-                        'unidad' => $unidad,
-                        'costo' => $costo,
-                        'precio' => $precio ?: $existente->precio,
-                        'stock_min' => $stockMin ?: $existente->stock_min,
-                        'stock' => round(((float) $existente->stock + ($stockExcel > 0 ? $stockExcel : 0)) * 100) / 100,
-                    ]);
+                    DB::transaction(function () use ($existente, $descripcion, $equivalente, $marca, $unidad, $costoRaw, $precioRaw, $stockMinRaw, $stockExcel, $costo, $precio, $stockMin, $stock) {
+                        $bloqueado = Producto::whereKey($existente->id)->lockForUpdate()->firstOrFail();
+                        // No pisar costo/precio/stock_min con 0 cuando la celda viene vacía.
+                        $bloqueado->update([
+                            'descripcion' => $descripcion,
+                            'equivalente' => $equivalente ?: $bloqueado->equivalente,
+                            'marca' => $marca ?: $bloqueado->marca,
+                            'unidad' => $unidad,
+                            'costo' => $costoRaw === '' ? $bloqueado->costo : $costo,
+                            'precio' => $precioRaw === '' ? $bloqueado->precio : $precio,
+                            'stock_min' => $stockMinRaw === '' ? $bloqueado->stock_min : $stockMin,
+                        ]);
+                        if ($stockExcel > 0) {
+                            $stock->aumentarStock($bloqueado->fresh(), $stockExcel);
+                        }
+                    });
                     $actualizados++;
                 } else {
                     Producto::create([

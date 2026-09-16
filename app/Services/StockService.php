@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Producto;
+use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
 class StockService
@@ -26,10 +27,14 @@ class StockService
         if ($cantidad < 0) {
             throw new InvalidArgumentException('La cantidad a aumentar no puede ser negativa.');
         }
-        $producto->stock = round(((float) $producto->stock + $cantidad) * 100) / 100;
-        $producto->save();
 
-        return $producto->fresh();
+        return DB::transaction(function () use ($producto, $cantidad) {
+            $bloqueado = Producto::whereKey($producto->getKey())->lockForUpdate()->firstOrFail();
+            $bloqueado->stock = round(((float) $bloqueado->stock + $cantidad) * 100) / 100;
+            $bloqueado->save();
+
+            return $bloqueado->fresh();
+        });
     }
 
     public function disminuirStock(Producto $producto, float $cantidad): Producto
@@ -38,16 +43,20 @@ class StockService
         if ($cantidad < 0) {
             throw new InvalidArgumentException('La cantidad a disminuir no puede ser negativa.');
         }
-        $nuevo = round(((float) $producto->stock - $cantidad) * 100) / 100;
-        if ($nuevo < 0) {
-            throw new InvalidArgumentException(
-                "Stock insuficiente para {$producto->codigo}: disponible {$producto->stock}, solicitado {$cantidad}."
-            );
-        }
-        $producto->stock = $nuevo;
-        $producto->save();
 
-        return $producto->fresh();
+        return DB::transaction(function () use ($producto, $cantidad) {
+            $bloqueado = Producto::whereKey($producto->getKey())->lockForUpdate()->firstOrFail();
+            $nuevo = round(((float) $bloqueado->stock - $cantidad) * 100) / 100;
+            if ($nuevo < 0) {
+                throw new InvalidArgumentException(
+                    "Stock insuficiente para {$bloqueado->codigo}: disponible {$bloqueado->stock}, solicitado {$cantidad}."
+                );
+            }
+            $bloqueado->stock = $nuevo;
+            $bloqueado->save();
+
+            return $bloqueado->fresh();
+        });
     }
 
     /**
@@ -57,10 +66,21 @@ class StockService
     public function revertirStock(Producto $producto, float $cantidad, string $tipoOperacion): Producto
     {
         if ($tipoOperacion === 'compra') {
-            $producto->stock = round(((float) $producto->stock - round($cantidad, 2)) * 100) / 100;
-            $producto->save();
+            $cantidad = round($cantidad, 2);
 
-            return $producto->fresh();
+            return DB::transaction(function () use ($producto, $cantidad) {
+                $bloqueado = Producto::whereKey($producto->getKey())->lockForUpdate()->firstOrFail();
+                $nuevo = round(((float) $bloqueado->stock - $cantidad) * 100) / 100;
+                if ($nuevo < 0) {
+                    throw new InvalidArgumentException(
+                        "No se puede revertir la compra: {$bloqueado->codigo} quedaría con stock negativo (disp. {$bloqueado->stock}, a revertir {$cantidad})."
+                    );
+                }
+                $bloqueado->stock = $nuevo;
+                $bloqueado->save();
+
+                return $bloqueado->fresh();
+            });
         }
 
         return $this->aumentarStock($producto, $cantidad);

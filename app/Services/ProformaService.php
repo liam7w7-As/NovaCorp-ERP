@@ -80,18 +80,24 @@ class ProformaService
         }
 
         return DB::transaction(function () use ($proforma, $tipo, $modalidad, $metodo) {
-            $proforma->load('detalles');
+            $proforma->load('detalles.producto');
 
             if ($proforma->detalles->isEmpty()) {
                 throw new InvalidArgumentException('La proforma no tiene items para convertir.');
             }
 
-            // Validar stock de todo el documento antes de tocar nada
+            // Bloquear filas de producto y validar stock dentro de la
+            // transacción (evita TOCTOU entre la comprobación y el descuento).
+            $ids = $proforma->detalles->map(fn ($det) => $det->producto_id)->filter()->all();
+            $bloqueados = Producto::whereIn('id', $ids)->lockForUpdate()->get()->keyBy('id');
             foreach ($proforma->detalles as $det) {
-                if ($det->producto && (float) $det->producto->stock < (float) $det->cantidad) {
-                    throw new InvalidArgumentException(
-                        "Stock insuficiente para {$det->codigo_producto} (disp. {$det->producto->stock}, req. {$det->cantidad})."
-                    );
+                if ($det->producto_id) {
+                    $disp = (float) ($bloqueados[$det->producto_id]->stock ?? 0);
+                    if ($disp < (float) $det->cantidad) {
+                        throw new InvalidArgumentException(
+                            "Stock insuficiente para {$det->codigo_producto} (disp. {$disp}, req. {$det->cantidad})."
+                        );
+                    }
                 }
             }
 

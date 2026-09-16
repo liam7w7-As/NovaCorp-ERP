@@ -131,7 +131,7 @@ class VentaController extends Controller
 
                 foreach ($data['items'] as $it) {
 
-                    $producto = Producto::findOrFail($it['producto_id']);
+                    $producto = Producto::whereKey($it['producto_id'])->lockForUpdate()->firstOrFail();
 
                     $cantidad = round((float) $it['cantidad'], 2);
                     $precio = round((float) $it['precio'], 2);
@@ -315,6 +315,7 @@ class VentaController extends Controller
 
         try {
             DB::transaction(function () use ($data, $request, $venta, $cliente, $stock) {
+                $venta->load('detalles.producto');
                 foreach ($venta->detalles as $det) {
                     if ($det->producto) {
                         $stock->revertirStock($det->producto, (float) $det->cantidad, 'venta');
@@ -325,7 +326,7 @@ class VentaController extends Controller
                 $subtotal = 0;
                 $detalles = [];
                 foreach ($data['items'] as $it) {
-                    $producto = Producto::findOrFail($it['producto_id']);
+                    $producto = Producto::whereKey($it['producto_id'])->lockForUpdate()->firstOrFail();
                     $cantidad = round((float) $it['cantidad'], 2);
                     $precio = round((float) $it['precio'], 2);
                     $sub = round($cantidad * $precio, 2);
@@ -400,6 +401,7 @@ class VentaController extends Controller
         }
 
         DB::transaction(function () use ($venta, $stock) {
+            $venta->load('detalles.producto');
             if (! $venta->origen_siat) {
                 foreach ($venta->detalles as $det) {
                     if ($det->producto) {
@@ -416,6 +418,7 @@ class VentaController extends Controller
     public function destroy(Venta $venta, StockService $stock)
     {
         DB::transaction(function () use ($venta, $stock) {
+            $venta->load('detalles.producto');
             if ($venta->estado === 'activa' && ! $venta->origen_siat) {
                 foreach ($venta->detalles as $det) {
                     if ($det->producto) {
@@ -630,16 +633,20 @@ class VentaController extends Controller
                     throw new \RuntimeException("Documento {$numeroDoc}: sin items válidos.");
                 }
 
-                // Validar stock de todo el documento antes de tocar nada
-                foreach ($items as $it) {
-                    if ((float) $it['producto']->fresh()->stock < $it['cantidad']) {
-                        throw new \RuntimeException(
-                            "Documento {$numeroDoc}: stock insuficiente para {$it['producto']->codigo} (disp. {$it['producto']->fresh()->stock}, req. {$it['cantidad']})."
-                        );
-                    }
-                }
-
                 DB::transaction(function () use ($numeroDoc, $tipo, $modalidad, $primera, $cliente, $items, $contadores, $stock, $comprobantes) {
+                    // Bloquear filas de producto y validar stock dentro de la
+                    // transacción (evita TOCTOU entre la comprobación y el descuento).
+                    $bloqueados = Producto::whereIn('id', collect($items)->map(fn ($it) => $it['producto']->id)->all())
+                        ->lockForUpdate()->get()->keyBy('id');
+                    foreach ($items as $it) {
+                        $disp = (float) ($bloqueados[$it['producto']->id]->stock ?? 0);
+                        if ($disp < $it['cantidad']) {
+                            throw new \RuntimeException(
+                                "Documento {$numeroDoc}: stock insuficiente para {$it['producto']->codigo} (disp. {$disp}, req. {$it['cantidad']})."
+                            );
+                        }
+                    }
+
                     $subtotal = round(array_sum(array_map(fn ($it) => $it['cantidad'] * $it['precio'], $items)), 2);
                     $descuento = round((float) ($primera['Descuento'] ?? $primera['descuento'] ?? 0), 2);
                     $total = max(0, round($subtotal - $descuento, 2));
