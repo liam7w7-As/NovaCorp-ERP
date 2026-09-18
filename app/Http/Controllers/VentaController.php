@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Cliente;
 use App\Models\Comprobante;
+use App\Models\CuotaVenta;
 use App\Models\Lead;
 use App\Models\Producto;
 use App\Models\Sucursal;
@@ -15,13 +16,20 @@ use App\Services\SiatCsvService;
 use App\Services\StockService;
 use App\Services\SucursalContext;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
 class VentaController extends Controller
 {
     public function index(Request $request)
     {
-        $query = Venta::with(['cliente', 'facturaElectronica'])->orderByDesc('id');
+        $query = Venta::with([
+            'cliente',
+            'facturaElectronica',
+            'detalles',
+            'sucursal',
+            'cuotas' => fn ($cuotas) => $cuotas->orderBy('numero'),
+        ])->orderByDesc('id');
 
         if ($request->filled('tipo')) {
             $query->where('tipo', $request->get('tipo'));
@@ -47,10 +55,30 @@ class VentaController extends Controller
         if ($request->filled('sucursal_id')) {
             $activas->where('sucursal_id', $request->get('sucursal_id'));
         }
+
+        $cuotasVencidas = CuotaVenta::whereIn('estado', ['pendiente', 'parcial'])
+            ->whereDate('fecha_vencimiento', '<', now()->toDateString())
+            ->whereHas('venta', function ($venta) use ($request): void {
+                $venta->where('estado', 'activa');
+                if ($request->filled('sucursal_id')) {
+                    $venta->where('sucursal_id', $request->get('sucursal_id'));
+                }
+            });
+
+        $porEntregar = Venta::where('estado', 'activa')
+            ->where('origen_siat', false)
+            ->where('entrega_estado', '!=', 'entregada');
+        if ($request->filled('sucursal_id')) {
+            $porEntregar->where('sucursal_id', $request->get('sucursal_id'));
+        }
+
         $kpis = [
             'total' => (float) (clone $activas)->sum('total'),
             'contado' => (float) (clone $activas)->where('modalidad', 'contado')->sum('total'),
             'credito' => (float) (clone $activas)->where('modalidad', 'credito')->sum('total'),
+            'saldo_cobrar' => round((float) (clone $activas)->whereColumn('pagado', '<', 'total')->sum(DB::raw('total - pagado')), 2),
+            'vencido' => round((float) $cuotasVencidas->sum(DB::raw('monto - pagado')), 2),
+            'por_entregar' => $porEntregar->count(),
             'debito_fiscal' => (float) (clone $activas)->where('origen_siat', true)->sum('debito_fiscal'),
             'documentos' => (clone $activas)->count(),
         ];
@@ -91,6 +119,8 @@ class VentaController extends Controller
             'tipo' => 'required|in:con_factura,sin_factura',
             'modalidad' => 'required|in:contado,credito',
             'fecha' => 'required|date',
+            'credito_dias' => 'nullable|integer|min:1|max:3650',
+            'credito_cuotas' => 'nullable|integer|min:1|max:36',
             'descuento' => 'nullable|numeric|min:0',
             'metodo' => 'nullable|string|max:100',
             'observaciones' => 'nullable|string',
@@ -179,6 +209,7 @@ class VentaController extends Controller
                 $sucursalActual = SucursalContext::sucursal();
 
                 $puntoVentaActual = SucursalContext::puntoVenta();
+                $credito = $this->atributosCredito($data);
 
                 $venta = Venta::create([
 
@@ -195,6 +226,12 @@ class VentaController extends Controller
                     'lead_id' => $data['lead_id'] ?? null,
 
                     'fecha' => $data['fecha'],
+
+                    'credito_dias' => $credito['credito_dias'],
+
+                    'credito_cuotas' => $credito['credito_cuotas'],
+
+                    'fecha_vencimiento' => $credito['fecha_vencimiento'],
 
                     'subtotal' => $subtotal,
 
@@ -236,15 +273,15 @@ class VentaController extends Controller
 
                         'cantidad' => $d['cantidad'],
 
+                        'cantidad_entregada' => 0,
+
                         'precio_unitario' => $d['precio'],
 
                         'subtotal' => $d['sub'],
 
                     ]);
 
-                    // Descontar inventario
-
-                    $stock->disminuirStock(
+                    $stock->reservarStock(
                         $d['producto']->fresh(),
                         $d['cantidad']
                     );
@@ -256,6 +293,8 @@ class VentaController extends Controller
                     $venta->fresh(),
                     $data['metodo'] ?? 'Efectivo'
                 );
+
+                $this->sincronizarCuotasCredito($venta->fresh(), $data);
 
                 $this->vincularLead($request->user(), $data['lead_id'] ?? null, $venta->fresh(), $cliente->id);
 
@@ -333,9 +372,20 @@ class VentaController extends Controller
         try {
             DB::transaction(function () use ($data, $request, $venta, $cliente, $stock) {
                 $venta->load('detalles.producto');
+                if ($venta->detalles->contains(fn ($det): bool => (float) $det->cantidad_entregada > 0)) {
+                    throw new \InvalidArgumentException(
+                        'No se puede editar una venta con entregas registradas. Anula la nota de entrega antes de modificarla.'
+                    );
+                }
+                if ($venta->cuotas()->where('pagado', '>', 0)->exists()) {
+                    throw new \InvalidArgumentException(
+                        'No se puede editar una venta con cobros registrados. Ajusta la cobranza desde Caja.'
+                    );
+                }
+
                 foreach ($venta->detalles as $det) {
                     if ($det->producto) {
-                        $stock->revertirStock($det->producto, (float) $det->cantidad, 'venta');
+                        $stock->liberarReserva($det->producto, (float) $det->pendiente_entrega);
                     }
                 }
                 $venta->detalles()->delete();
@@ -352,6 +402,7 @@ class VentaController extends Controller
                 }
                 $descuento = round((float) ($data['descuento'] ?? 0), 2);
                 $total = max(0, round($subtotal - $descuento, 2));
+                $credito = $this->atributosCredito($data);
 
                 $venta->update([
                     'tipo' => $data['tipo'],
@@ -359,12 +410,17 @@ class VentaController extends Controller
                     'cliente_id' => $cliente->id,
                     'cliente_nombre' => $cliente->nombre,
                     'fecha' => $data['fecha'],
+                    'credito_dias' => $credito['credito_dias'],
+                    'credito_cuotas' => $credito['credito_cuotas'],
+                    'fecha_vencimiento' => $credito['fecha_vencimiento'],
                     'subtotal' => $subtotal,
                     'descuento' => $descuento,
                     'total' => $total,
                     'base_df' => $data['tipo'] === 'con_factura' ? $total : null,
                     'debito_fiscal' => $data['tipo'] === 'con_factura' ? round($total * 0.13, 2) : null,
                     'observaciones' => $request->input('observaciones'),
+                    'entrega_estado' => 'pendiente',
+                    'entregado_at' => null,
                 ]);
 
                 foreach ($detalles as $d) {
@@ -379,14 +435,17 @@ class VentaController extends Controller
 
                         'cantidad' => $d['cantidad'],
 
+                        'cantidad_entregada' => 0,
+
                         'precio_unitario' => $d['precio'],
 
                         'subtotal' => $d['sub'],
                     ]);
-                    $stock->disminuirStock($d['producto']->fresh(), $d['cantidad']);
+                    $stock->reservarStock($d['producto']->fresh(), $d['cantidad']);
                 }
 
                 $this->sincronizarComprobante($venta->fresh());
+                $this->sincronizarCuotasCredito($venta->fresh(), $data);
             });
         } catch (\InvalidArgumentException $e) {
             return back()->withInput()->with('error', $e->getMessage());
@@ -434,6 +493,80 @@ class VentaController extends Controller
         }
     }
 
+    protected function atributosCredito(array $data): array
+    {
+        if (($data['modalidad'] ?? 'contado') !== 'credito') {
+            return [
+                'credito_dias' => null,
+                'credito_cuotas' => 1,
+                'fecha_vencimiento' => null,
+            ];
+        }
+
+        $dias = (int) ($data['credito_dias'] ?? 30);
+        $cuotas = (int) ($data['credito_cuotas'] ?? 1);
+
+        return [
+            'credito_dias' => $dias,
+            'credito_cuotas' => $cuotas,
+            'fecha_vencimiento' => Carbon::parse($data['fecha'])->addDays($dias)->toDateString(),
+        ];
+    }
+
+    protected function sincronizarCuotasCredito(Venta $venta, array $data): void
+    {
+        if ($venta->modalidad !== 'credito' || (float) $venta->total <= 0) {
+            $venta->cuotas()->delete();
+
+            return;
+        }
+
+        if ($venta->cuotas()->where('pagado', '>', 0)->exists()) {
+            throw new \InvalidArgumentException('No se puede recrear el plan de cuotas porque ya existen cobros.');
+        }
+
+        $venta->cuotas()->delete();
+
+        $cantidadCuotas = max(1, (int) ($data['credito_cuotas'] ?? $venta->credito_cuotas ?? 1));
+        $dias = max(1, (int) ($data['credito_dias'] ?? $venta->credito_dias ?? 30));
+        $montoBase = round((float) $venta->total / $cantidadCuotas, 2);
+        $acumulado = 0.0;
+
+        for ($numero = 1; $numero <= $cantidadCuotas; $numero++) {
+            $monto = $numero === $cantidadCuotas
+                ? round((float) $venta->total - $acumulado, 2)
+                : $montoBase;
+            $acumulado = round($acumulado + $monto, 2);
+
+            $venta->cuotas()->create([
+                'numero' => $numero,
+                'fecha_vencimiento' => Carbon::parse($venta->fecha)->addDays($dias * $numero),
+                'monto' => $monto,
+                'pagado' => 0,
+                'estado' => 'pendiente',
+            ]);
+        }
+    }
+
+    protected function revertirAlmacenVenta(Venta $venta, StockService $stock): void
+    {
+        foreach ($venta->detalles as $det) {
+            if (! $det->producto) {
+                continue;
+            }
+
+            $entregado = round((float) $det->cantidad_entregada, 2);
+            $pendiente = round(max(0, (float) $det->cantidad - $entregado), 2);
+
+            if ($entregado > 0) {
+                $stock->revertirEntrega($det->producto, $entregado);
+            }
+            if ($pendiente > 0) {
+                $stock->liberarReserva($det->producto, $pendiente);
+            }
+        }
+    }
+
     public function anular(Venta $venta, StockService $stock)
     {
         SucursalContext::autorizaSucursal($venta->sucursal_id);
@@ -444,16 +577,12 @@ class VentaController extends Controller
         DB::transaction(function () use ($venta, $stock) {
             $venta->load('detalles.producto');
             if (! $venta->origen_siat) {
-                foreach ($venta->detalles as $det) {
-                    if ($det->producto) {
-                        $stock->revertirStock($det->producto, (float) $det->cantidad, 'venta');
-                    }
-                }
+                $this->revertirAlmacenVenta($venta, $stock);
             }
             $venta->update(['estado' => 'anulada']);
         });
 
-        return back()->with('exito', 'Venta anulada, stock revertido');
+        return back()->with('exito', 'Venta anulada, almacén actualizado');
     }
 
     public function destroy(Venta $venta, StockService $stock)
@@ -462,11 +591,7 @@ class VentaController extends Controller
         DB::transaction(function () use ($venta, $stock) {
             $venta->load('detalles.producto');
             if ($venta->estado === 'activa' && ! $venta->origen_siat) {
-                foreach ($venta->detalles as $det) {
-                    if ($det->producto) {
-                        $stock->revertirStock($det->producto, (float) $det->cantidad, 'venta');
-                    }
-                }
+                $this->revertirAlmacenVenta($venta, $stock);
             }
             Comprobante::where('origen_venta_id', $venta->id)->delete();
             $venta->delete();
@@ -676,12 +801,13 @@ class VentaController extends Controller
                 }
 
                 DB::transaction(function () use ($numeroDoc, $tipo, $modalidad, $primera, $cliente, $items, $contadores, $stock, $comprobantes) {
-                    // Bloquear filas de producto y validar stock dentro de la
-                    // transacción (evita TOCTOU entre la comprobación y el descuento).
+                    // Bloquear filas de producto y validar disponible dentro de la
+                    // transacción (evita TOCTOU entre la comprobación y la reserva).
                     $bloqueados = Producto::whereIn('id', collect($items)->map(fn ($it) => $it['producto']->id)->all())
                         ->lockForUpdate()->get()->keyBy('id');
                     foreach ($items as $it) {
-                        $disp = (float) ($bloqueados[$it['producto']->id]->stock ?? 0);
+                        $bloqueado = $bloqueados[$it['producto']->id];
+                        $disp = round((float) $bloqueado->stock - (float) $bloqueado->stock_reservado, 2);
                         if ($disp < $it['cantidad']) {
                             throw new \RuntimeException(
                                 "Documento {$numeroDoc}: stock insuficiente para {$it['producto']->codigo} (disp. {$disp}, req. {$it['cantidad']})."
@@ -692,6 +818,13 @@ class VentaController extends Controller
                     $subtotal = round(array_sum(array_map(fn ($it) => $it['cantidad'] * $it['precio'], $items)), 2);
                     $descuento = round((float) ($primera['Descuento'] ?? $primera['descuento'] ?? 0), 2);
                     $total = max(0, round($subtotal - $descuento, 2));
+                    $fecha = trim((string) ($primera['Fecha'] ?? $primera['fecha'] ?? '')) ?: date('Y-m-d');
+                    $credito = $this->atributosCredito([
+                        'modalidad' => $modalidad,
+                        'fecha' => $fecha,
+                        'credito_dias' => (int) ($primera['CreditoDias'] ?? $primera['credito_dias'] ?? 30),
+                        'credito_cuotas' => (int) ($primera['Cuotas'] ?? $primera['credito_cuotas'] ?? 1),
+                    ]);
 
                     $venta = Venta::create([
                         'numero' => $numeroDoc ?? $contadores->siguienteUnico($tipo === 'con_factura' ? 'FV-' : 'NV-', fn ($n) => Venta::withTrashed()->where('numero', $n)->exists()),
@@ -699,7 +832,10 @@ class VentaController extends Controller
                         'modalidad' => $modalidad,
                         'cliente_id' => $cliente->id,
                         'cliente_nombre' => $cliente->nombre,
-                        'fecha' => trim((string) ($primera['Fecha'] ?? $primera['fecha'] ?? '')) ?: date('Y-m-d'),
+                        'fecha' => $fecha,
+                        'credito_dias' => $credito['credito_dias'],
+                        'credito_cuotas' => $credito['credito_cuotas'],
+                        'fecha_vencimiento' => $credito['fecha_vencimiento'],
                         'subtotal' => $subtotal,
                         'descuento' => $descuento,
                         'total' => $total,
@@ -715,13 +851,19 @@ class VentaController extends Controller
                             'codigo_producto' => $it['producto']->codigo,
                             'descripcion_producto' => $it['producto']->descripcion,
                             'cantidad' => $it['cantidad'],
+                            'cantidad_entregada' => 0,
                             'precio_unitario' => $it['precio'],
                             'subtotal' => $sub,
                         ]);
-                        $stock->disminuirStock($it['producto']->fresh(), $it['cantidad']);
+                        $stock->reservarStock($it['producto']->fresh(), $it['cantidad']);
                     }
 
                     $comprobantes->crearParaVenta($venta->fresh(), 'Importado CSV');
+                    $this->sincronizarCuotasCredito($venta->fresh(), [
+                        'modalidad' => $modalidad,
+                        'credito_dias' => $credito['credito_dias'] ?? 30,
+                        'credito_cuotas' => $credito['credito_cuotas'] ?? 1,
+                    ]);
                 });
 
                 $creadas++;

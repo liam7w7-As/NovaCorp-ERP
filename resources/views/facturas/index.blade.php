@@ -42,40 +42,42 @@
 @endif
 
 <div class="card-giseca" style="padding:0; overflow:hidden;">
-  <table class="tabla-giseca">
-    <thead><tr><th>N° Factura</th><th>Sucursal / POS</th><th>CUF</th><th>Cliente</th><th>Fecha</th><th class="text-end">Total</th><th>Estado</th><th></th></tr></thead>
-    <tbody>
-      @forelse($facturas as $f)
-        <tr>
-          <td><span class="codigo-chip">{{ $f->numero_factura }}</span>@if($f->simulada)<div style="font-size:10px; color:var(--gc-gris-claro);">SIMULADA</div>@endif</td>
-          <td>
-            <div style="font-weight:600; font-size:12px;">{{ $f->sucursal?->nombre ?? 'Casa Matriz' }}</div>
-            <div style="font-size:10px; color:var(--gc-gris-claro);">Suc. {{ $f->codigo_sucursal }} · POS {{ $f->codigo_punto_venta }}</div>
-          </td>
-          <td style="max-width:160px; overflow:hidden; text-overflow:ellipsis;" title="{{ $f->cuf }}"><span style="font-size:11.5px;">{{ \Illuminate\Support\Str::limit($f->cuf, 18) }}</span></td>
-          <td>{{ $f->venta->cliente_nombre ?? '—' }}</td>
-          <td>{{ $f->fecha_emision->format('Y-m-d H:i') }}</td>
-          <td class="text-end fw-bold">Bs {{ formatoMoneda($f->venta->total ?? 0) }}</td>
-          <td><span class="estado {{ $badge[$f->estado] ?? 'estado-borrador' }}">{{ strtoupper($f->estado) }}</span></td>
-          <td class="text-end" style="white-space:nowrap;">
-            <a class="btn-giseca btn-outline btn-icon btn-sm" title="Ver detalle" href="{{ route('facturas.show', $f) }}"><i class="bi bi-eye"></i></a>
-            <a class="btn-giseca btn-outline btn-icon btn-sm" title="PDF Carta" href="{{ route('facturas.pdf', $f) }}"><i class="bi bi-file-earmark-pdf"></i></a>
-            <a class="btn-giseca btn-outline btn-icon btn-sm" title="PDF Medio Oficio" href="{{ route('facturas.pdf-medio-oficio', $f) }}"><i class="bi bi-file-text"></i></a>
-            <a class="btn-giseca btn-outline btn-icon btn-sm" title="Ticket 80mm" href="{{ route('facturas.pdf-rollo', $f) }}"><i class="bi bi-receipt"></i></a>
-            <a class="btn-giseca btn-outline btn-icon btn-sm" title="Ticket 58mm" href="{{ route('facturas.pdf-rollo-58', $f) }}"><i class="bi bi-receipt-cutoff"></i></a>
-            @if($f->xml_firmado)<a class="btn-giseca btn-outline btn-icon btn-sm" title="XML firmado" href="{{ route('facturas.xml', $f) }}"><i class="bi bi-file-earmark-code"></i></a>@endif
-            @if($f->estado === 'emitida')
-              @can('facturas.emitir')<button class="btn-giseca btn-outline btn-icon btn-sm" title="Anular" onclick="abrirModalAnular('{{ route('facturas.anular', $f) }}', '{{ $f->numero_factura }}')"><i class="bi bi-x-circle" style="color:var(--gc-rojo);"></i></button>@endcan
-            @elseif($f->estado !== 'emitida' && $f->estado !== 'anulada')
-              @can('admin')<form method="POST" action="{{ route('facturas.destroy', $f) }}" style="display:inline;" onsubmit="return confirm('¿Eliminar este registro?')">@csrf @method('DELETE')<button class="btn-giseca btn-outline btn-icon btn-sm" title="Eliminar"><i class="bi bi-trash" style="color:var(--gc-rojo);"></i></button></form>@endcan
-            @endif
-          </td>
-        </tr>
-      @empty
-        <tr><td colspan="8" style="text-align:center; color:var(--gc-gris-claro); padding:40px;"><i class="bi bi-file-earmark-check" style="font-size:30px; display:block; margin-bottom:8px; opacity:.5;"></i>Sin facturas electrónicas. Emite una desde una venta con factura.</td></tr>
-      @endforelse
-    </tbody>
-  </table>
+  <div style="overflow-x:auto; -webkit-overflow-scrolling:touch;">
+    <table class="tabla-giseca">
+      <thead><tr><th>N° Factura</th><th>Sucursal / POS</th><th>CUF</th><th>Cliente</th><th>Fecha</th><th class="text-end">Total</th><th>Estado</th><th></th></tr></thead>
+      <tbody>
+        @forelse($facturas as $f)
+          <tr>
+            <td><span class="codigo-chip">{{ $f->numero_factura }}</span>@if($f->simulada)<div style="font-size:10px; color:var(--gc-gris-claro);">SIMULADA</div>@endif</td>
+            <td>
+              <div style="font-weight:600; font-size:12px;">{{ $f->sucursal?->nombre ?? 'Casa Matriz' }}</div>
+              <div style="font-size:10px; color:var(--gc-gris-claro);">Suc. {{ $f->codigo_sucursal }} · POS {{ $f->codigo_punto_venta }}</div>
+            </td>
+            <td style="max-width:160px; overflow:hidden; text-overflow:ellipsis;" title="{{ $f->cuf }}"><span style="font-size:11.5px;">{{ \Illuminate\Support\Str::limit($f->cuf, 18) }}</span></td>
+            <td>{{ $f->venta->cliente_nombre ?? '—' }}</td>
+            <td>{{ $f->fecha_emision->format('Y-m-d H:i') }}</td>
+            <td class="text-end fw-bold">Bs {{ formatoMoneda($f->venta->total ?? 0) }}</td>
+            <td><span class="estado {{ $badge[$f->estado] ?? 'estado-borrador' }}">{{ strtoupper($f->estado) }}</span></td>
+            <td class="text-end" style="white-space:nowrap;">
+              <a class="btn-giseca btn-outline btn-icon btn-sm" title="Ver detalle" href="{{ route('facturas.show', $f) }}"><i class="bi bi-eye"></i></a>
+              <a class="btn-giseca btn-outline btn-icon btn-sm" title="PDF Carta" href="{{ route('facturas.pdf', $f) }}"><i class="bi bi-file-earmark-pdf"></i></a>
+              <a class="btn-giseca btn-outline btn-icon btn-sm" title="PDF Medio Oficio" href="{{ route('facturas.pdf-medio-oficio', $f) }}"><i class="bi bi-file-text"></i></a>
+              <a class="btn-giseca btn-outline btn-icon btn-sm" title="Ticket 80mm" href="{{ route('facturas.pdf-rollo', $f) }}"><i class="bi bi-receipt"></i></a>
+              <a class="btn-giseca btn-outline btn-icon btn-sm" title="Ticket 58mm" href="{{ route('facturas.pdf-rollo-58', $f) }}"><i class="bi bi-receipt-cutoff"></i></a>
+              @if($f->xml_firmado)<a class="btn-giseca btn-outline btn-icon btn-sm" title="XML firmado" href="{{ route('facturas.xml', $f) }}"><i class="bi bi-file-earmark-code"></i></a>@endif
+              @if($f->estado === 'emitida')
+                @can('facturas.emitir')<button class="btn-giseca btn-outline btn-icon btn-sm" title="Anular" onclick="abrirModalAnular('{{ route('facturas.anular', $f) }}', '{{ $f->numero_factura }}')"><i class="bi bi-x-circle" style="color:var(--gc-rojo);"></i></button>@endcan
+              @elseif($f->estado !== 'emitida' && $f->estado !== 'anulada')
+                @can('admin')<form method="POST" action="{{ route('facturas.destroy', $f) }}" style="display:inline;" onsubmit="return confirm('¿Eliminar este registro?')">@csrf @method('DELETE')<button class="btn-giseca btn-outline btn-icon btn-sm" title="Eliminar"><i class="bi bi-trash" style="color:var(--gc-rojo);"></i></button></form>@endcan
+              @endif
+            </td>
+          </tr>
+        @empty
+          <tr><td colspan="8" style="text-align:center; color:var(--gc-gris-claro); padding:40px;"><i class="bi bi-file-earmark-check" style="font-size:30px; display:block; margin-bottom:8px; opacity:.5;"></i>Sin facturas electrónicas. Emite una desde una venta con factura.</td></tr>
+        @endforelse
+      </tbody>
+    </table>
+  </div>
 </div>
 
 @if($facturas->hasPages())

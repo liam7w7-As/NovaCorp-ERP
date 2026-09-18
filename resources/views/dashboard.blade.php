@@ -131,7 +131,7 @@
           <div class="icono" style="background:var(--gc-rojo-suave); color:var(--gc-rojo);"><i class="bi bi-box-seam"></i></div>
           <div><div style="font-weight:600;">{{ $p->codigo }}</div><div style="color:var(--gc-gris-claro); font-size:11.5px;">{{ \Illuminate\Support\Str::limit($p->descripcion, 26) }}</div></div>
         </div>
-        <span class="estado estado-rechazada">{{ $p->stock }}/{{ $p->stock_min }}</span>
+        <span class="estado estado-rechazada">{{ formatoMoneda($p->stock_disponible) }}/{{ formatoMoneda($p->stock_min) }}</span>
       </div>
     @empty
       <div class="gc-vacio"><i class="bi bi-check-circle"></i>Sin alertas de stock.</div>

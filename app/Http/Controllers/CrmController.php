@@ -35,6 +35,7 @@ class CrmController extends Controller
         $canalId = $request->integer('canal');
         $vendedorId = $puedeAdministrar ? $request->integer('vendedor') : 0;
         $seguimiento = (string) $request->get('seguimiento', '');
+        $hace4Horas = now()->subHours(4);
 
         $leads = $this->consultaVisible($usuario)
             ->with(['etapa', 'canalWhatsapp', 'vendedor', 'ultimoMensajeWhatsapp'])
@@ -49,6 +50,7 @@ class CrmController extends Controller
             })
             ->when($canalId > 0, fn (Builder $query) => $query->where('canal_whatsapp_id', $canalId))
             ->when($vendedorId > 0, fn (Builder $query) => $query->where('vendedor_id', $vendedorId))
+            ->when($seguimiento !== '', fn (Builder $query) => $this->aplicarFiltroSeguimiento($query, $seguimiento, $hace4Horas))
             ->latest('etapa_actualizada_at')
             ->latest('id')
             ->take(self::MAX_LEADS_TABLERO + 1)
@@ -58,8 +60,6 @@ class CrmController extends Controller
         $leads = $leads->take(self::MAX_LEADS_TABLERO);
 
         $hace48Horas = now()->subHours(48);
-        $hace4Horas = now()->subHours(4);
-        $leads = $this->filtrarSeguimiento($leads, $seguimiento, $hace4Horas);
         $estadisticas = [
             'total' => $leads->count(),
             'clientes' => $leads->whereNotNull('cliente_id')->count(),
@@ -511,13 +511,21 @@ class CrmController extends Controller
         ];
     }
 
-    private function filtrarSeguimiento(Collection $leads, string $seguimiento, Carbon $hace4Horas): Collection
+    private function aplicarFiltroSeguimiento(Builder $query, string $seguimiento, Carbon $hace4Horas): Builder
     {
         return match ($seguimiento) {
-            'sin_responder' => $leads->filter(fn (Lead $lead): bool => $this->sinResponder($lead))->values(),
-            'vencidos' => $leads->filter(fn (Lead $lead): bool => $this->sinResponder($lead) && $lead->ultimoMensajeWhatsapp?->ocurrio_at?->lessThan($hace4Horas))->values(),
-            'errores' => $leads->filter(fn (Lead $lead): bool => $lead->ultimoMensajeWhatsapp?->direccion === 'saliente' && $lead->ultimoMensajeWhatsapp?->estado === 'error')->values(),
-            default => $leads,
+            'sin_responder' => $query
+                ->whereHas('etapa', fn (Builder $subQuery): Builder => $subQuery->where('tipo', 'activa'))
+                ->whereHas('ultimoMensajeWhatsapp', fn (Builder $subQuery): Builder => $subQuery->where('direccion', 'entrante')),
+            'vencidos' => $query
+                ->whereHas('etapa', fn (Builder $subQuery): Builder => $subQuery->where('tipo', 'activa'))
+                ->whereHas('ultimoMensajeWhatsapp', fn (Builder $subQuery): Builder => $subQuery
+                    ->where('direccion', 'entrante')
+                    ->where('ocurrio_at', '<', $hace4Horas)),
+            'errores' => $query->whereHas('ultimoMensajeWhatsapp', fn (Builder $subQuery): Builder => $subQuery
+                ->where('direccion', 'saliente')
+                ->where('estado', 'error')),
+            default => $query,
         };
     }
 

@@ -6,12 +6,15 @@ use App\Mail\FacturaCorreo;
 use App\Models\Auditoria;
 use App\Models\Configuracion;
 use App\Models\FacturaElectronica;
+use App\Models\Rol;
 use App\Models\Sucursal;
 use App\Models\Venta;
 use App\Services\FacturaService;
 use App\Services\SucursalContext;
 use Barryvdh\DomPDF\Facade\Pdf;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
 
@@ -20,12 +23,11 @@ class FacturaController extends Controller
     public function index(Request $request)
     {
         $query = FacturaElectronica::with(['venta', 'sucursal', 'puntoVenta'])->orderByDesc('id');
+        $sucursalId = $this->sucursalPermitidaParaLectura($request);
+        $this->aplicarSucursalVisible($query, $sucursalId);
 
         if ($request->filled('estado')) {
             $query->where('estado', $request->get('estado'));
-        }
-        if ($request->filled('sucursal_id')) {
-            $query->where('sucursal_id', $request->get('sucursal_id'));
         }
         if ($request->filled('q')) {
             $q = trim($request->get('q'));
@@ -46,15 +48,17 @@ class FacturaController extends Controller
 
         $resumen = [];
         foreach (FacturaElectronica::ESTADOS as $e) {
-            $resumen[$e] = FacturaElectronica::where('estado', $e)->count();
+            $resumenQuery = FacturaElectronica::where('estado', $e);
+            $this->aplicarSucursalVisible($resumenQuery, $sucursalId);
+            $resumen[$e] = $resumenQuery->count();
         }
 
         return view('facturas.index', [
             'facturas' => $facturas,
             'resumen' => $resumen,
             'estado' => $request->get('estado', ''),
-            'sucursal_id' => $request->get('sucursal_id', ''),
-            'sucursales' => Sucursal::activas()->orderBy('codigo')->get(),
+            'sucursal_id' => $sucursalId ?: $request->get('sucursal_id', ''),
+            'sucursales' => $this->sucursalesVisibles($request),
             'q' => $request->get('q', ''),
             'desde' => $request->get('desde', ''),
             'hasta' => $request->get('hasta', ''),
@@ -63,6 +67,7 @@ class FacturaController extends Controller
 
     public function show(FacturaElectronica $factura)
     {
+        SucursalContext::autorizaSucursal($factura->sucursal_id);
         $factura->load('venta.detalles', 'usuario', 'notas', 'sucursal', 'puntoVenta');
 
         return view('facturas.show', compact('factura'));
@@ -111,6 +116,7 @@ class FacturaController extends Controller
 
     public function reenviarCorreo(Request $request, FacturaElectronica $factura)
     {
+        SucursalContext::autorizaSucursal($factura->sucursal_id);
         $request->validate([
             'email' => 'nullable|email',
         ]);
@@ -205,7 +211,7 @@ class FacturaController extends Controller
 
     public function reporteAnulaciones(Request $request)
     {
-        $sucursalId = $request->get('sucursal_id');
+        $sucursalId = $this->sucursalPermitidaParaLectura($request);
         // Anti CSV-injection: neutralizar celdas que empiezan con = + - @ (Excel las ejecutaría).
         $esc = function ($v) {
             $v = (string) $v;
@@ -241,6 +247,7 @@ class FacturaController extends Controller
 
     public function descargarPdf(FacturaElectronica $factura, FacturaService $facturas)
     {
+        SucursalContext::autorizaSucursal($factura->sucursal_id);
         if (! $factura->pdf_path || ! Storage::disk('public')->exists($factura->pdf_path)) {
             $path = $facturas->generarPdf($factura);
             $factura->update(['pdf_path' => $path]);
@@ -251,6 +258,7 @@ class FacturaController extends Controller
 
     public function descargarPdfRollo(FacturaElectronica $factura)
     {
+        SucursalContext::autorizaSucursal($factura->sucursal_id);
         $factura->load(['venta.detalles', 'sucursal', 'puntoVenta']);
         $pdf = Pdf::loadView('facturas.pdf-rollo', [
             'factura' => $factura,
@@ -264,6 +272,7 @@ class FacturaController extends Controller
 
     public function descargarPdfMedioOficio(FacturaElectronica $factura)
     {
+        SucursalContext::autorizaSucursal($factura->sucursal_id);
         $factura->load(['venta.detalles', 'sucursal', 'puntoVenta']);
         $pdf = Pdf::loadView('facturas.pdf-medio-oficio', [
             'factura' => $factura,
@@ -278,6 +287,7 @@ class FacturaController extends Controller
 
     public function descargarPdfRollo58(FacturaElectronica $factura)
     {
+        SucursalContext::autorizaSucursal($factura->sucursal_id);
         $factura->load(['venta.detalles', 'sucursal', 'puntoVenta']);
         $pdf = Pdf::loadView('facturas.pdf-rollo-58', [
             'factura' => $factura,
@@ -292,6 +302,7 @@ class FacturaController extends Controller
 
     public function descargarXml(FacturaElectronica $factura)
     {
+        SucursalContext::autorizaSucursal($factura->sucursal_id);
         if (! $factura->xml_firmado) {
             return back()->with('error', 'XML no disponible.');
         }
@@ -304,6 +315,7 @@ class FacturaController extends Controller
 
     public function destroy(FacturaElectronica $factura)
     {
+        SucursalContext::autorizaSucursal($factura->sucursal_id);
         if ($factura->estado === 'emitida') {
             return back()->with('error', 'No se puede eliminar una factura EMITIDA (documento fiscal). Anúlala ante el SIN.');
         }
@@ -314,5 +326,43 @@ class FacturaController extends Controller
         $factura->delete();
 
         return redirect()->route('facturas.index')->with('exito', 'Registro de factura eliminado');
+    }
+
+    private function sucursalPermitidaParaLectura(Request $request): ?int
+    {
+        $sucursalSolicitada = $request->filled('sucursal_id') ? $request->integer('sucursal_id') : null;
+
+        if ($sucursalSolicitada) {
+            SucursalContext::autorizaSucursal($sucursalSolicitada);
+        }
+
+        $usuario = $request->user();
+        if ($this->usuarioRestringidoASucursal($usuario)) {
+            return (int) $usuario->sucursal_id;
+        }
+
+        return $sucursalSolicitada;
+    }
+
+    private function aplicarSucursalVisible(Builder $query, ?int $sucursalId): Builder
+    {
+        return $query->when($sucursalId, fn (Builder $subQuery): Builder => $subQuery->where('sucursal_id', $sucursalId));
+    }
+
+    private function sucursalesVisibles(Request $request): Collection
+    {
+        $usuario = $request->user();
+
+        return Sucursal::activas()
+            ->when($this->usuarioRestringidoASucursal($usuario), fn (Builder $query): Builder => $query->whereKey($usuario->sucursal_id))
+            ->orderBy('codigo')
+            ->get();
+    }
+
+    private function usuarioRestringidoASucursal(?object $usuario): bool
+    {
+        return $usuario
+            && ! in_array($usuario->rol ?? null, [Rol::OCULTO, 'admin'], true)
+            && (bool) $usuario->sucursal_id;
     }
 }

@@ -19,6 +19,7 @@ class RolesPermisosSeeder extends Seeder
             ['clave' => 'admin', 'nombre' => 'Administrador', 'descripcion' => 'Acceso total', 'es_sistema' => true],
             ['clave' => 'vendedor', 'nombre' => 'Vendedor', 'descripcion' => 'Ventas, proformas y clientes', 'es_sistema' => false],
             ['clave' => 'contador', 'nombre' => 'Contador', 'descripcion' => 'Compras, comprobantes y tributario', 'es_sistema' => false],
+            ['clave' => 'almacen', 'nombre' => 'Almacén', 'descripcion' => 'Preparación y entrega de pedidos', 'es_sistema' => false],
             ['clave' => 'gerencia', 'nombre' => 'Gerencia', 'descripcion' => 'Supervisión comercial y del CRM', 'es_sistema' => false],
         ];
         foreach ($roles as $r) {

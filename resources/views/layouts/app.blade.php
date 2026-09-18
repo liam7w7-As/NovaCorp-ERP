@@ -179,7 +179,7 @@
         @endcanany
 
         {{-- COMPRAS E INVENTARIO --}}
-        @canany(['proveedores', 'compras', 'productos'])
+        @canany(['proveedores', 'compras', 'productos', 'almacen'])
           <div class="seccion">Compras e Inventario</div>
           @can('proveedores')
             <a href="{{ route('proveedores.index') }}" class="{{ request()->routeIs('proveedores.*') ? 'active' : '' }}">
@@ -197,6 +197,11 @@
             </a>
             <a href="{{ route('kardex.index') }}" class="{{ request()->routeIs('kardex.*') ? 'active' : '' }}">
               <i class="bi bi-arrow-left-right"></i> Kardex Valorado
+            </a>
+          @endcan
+          @can('almacen')
+            <a href="{{ route('almacen.index') }}" class="{{ request()->routeIs('almacen.*') ? 'active' : '' }}">
+              <i class="bi bi-clipboard-check"></i> Almacén
             </a>
           @endcan
         @endcanany

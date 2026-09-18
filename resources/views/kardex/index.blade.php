@@ -19,7 +19,12 @@
         <tr class="{{ $v['producto']->en_alerta ? 'alerta' : '' }}">
           <td><span class="codigo-chip">{{ $v['producto']->codigo }}</span></td>
           <td>{{ \Illuminate\Support\Str::limit($v['producto']->descripcion, 40) }}</td>
-          <td class="text-end">{{ $v['producto']->stock }}</td>
+          <td class="text-end">
+            {{ $v['producto']->stock }}
+            @if((float) $v['producto']->stock_reservado > 0)
+              <div style="font-size:10.5px;color:var(--gc-gris);">Disp. {{ formatoMoneda($v['producto']->stock_disponible) }}</div>
+            @endif
+          </td>
           <td class="text-end">{{ formatoMoneda($v['producto']->costo) }}</td>
           <td class="text-end fw-bold">Bs {{ formatoMoneda($v['valor']) }}</td>
           <td class="text-end"><a class="btn-giseca btn-outline btn-sm" href="{{ route('kardex.show', $v['producto']) }}"><i class="bi bi-list-ul"></i> Kardex</a></td>

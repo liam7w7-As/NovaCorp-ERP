@@ -48,14 +48,18 @@ class VentaStockTest extends TestCase
         ];
     }
 
-    public function test_crear_venta_descuenta_stock(): void
+    public function test_crear_venta_reserva_stock_para_almacen(): void
     {
         $producto = $this->crearProducto(10);
 
         $response = $this->actingAs($this->admin)->post(route('ventas.store'), $this->payloadVenta($producto, 3));
 
         $response->assertSessionHas('exito');
-        $this->assertEquals(7, (float) $producto->fresh()->stock);
+        $producto->refresh();
+        $this->assertEquals(10, (float) $producto->stock);
+        $this->assertEquals(3, (float) $producto->stock_reservado);
+        $this->assertEquals(7, (float) $producto->stock_disponible);
+        $this->assertSame('pendiente', Venta::firstOrFail()->entrega_estado);
     }
 
     public function test_venta_sin_stock_suficiente_es_rechazada(): void
@@ -65,7 +69,9 @@ class VentaStockTest extends TestCase
         $response = $this->actingAs($this->admin)->post(route('ventas.store'), $this->payloadVenta($producto, 5));
 
         $response->assertSessionHas('error');
-        $this->assertEquals(2, (float) $producto->fresh()->stock);
+        $producto->refresh();
+        $this->assertEquals(2, (float) $producto->stock);
+        $this->assertEquals(0, (float) $producto->stock_reservado);
         $this->assertSame(0, Venta::count());
     }
 
@@ -75,15 +81,20 @@ class VentaStockTest extends TestCase
 
         $this->actingAs($this->admin)->post(route('ventas.store'), $this->payloadVenta($producto, 5))
             ->assertSessionHas('exito');
-        $this->assertEquals(0, (float) $producto->fresh()->stock);
+        $producto->refresh();
+        $this->assertEquals(5, (float) $producto->stock);
+        $this->assertEquals(5, (float) $producto->stock_reservado);
+        $this->assertEquals(0, (float) $producto->stock_disponible);
 
         $this->actingAs($this->admin)->post(route('ventas.store'), $this->payloadVenta($producto, 1))
             ->assertSessionHas('error');
-        $this->assertEquals(0, (float) $producto->fresh()->stock);
+        $producto->refresh();
+        $this->assertEquals(5, (float) $producto->stock);
+        $this->assertEquals(5, (float) $producto->stock_reservado);
         $this->assertSame(1, Venta::count());
     }
 
-    public function test_anular_venta_revierte_stock(): void
+    public function test_anular_venta_libera_reserva_de_stock(): void
     {
         $producto = $this->crearProducto(10);
         $this->actingAs($this->admin)->post(route('ventas.store'), $this->payloadVenta($producto, 4));
@@ -92,7 +103,9 @@ class VentaStockTest extends TestCase
         $this->actingAs($this->admin)->post(route('ventas.anular', $venta))
             ->assertSessionHas('exito');
 
-        $this->assertEquals(10, (float) $producto->fresh()->stock);
+        $producto->refresh();
+        $this->assertEquals(10, (float) $producto->stock);
+        $this->assertEquals(0, (float) $producto->stock_reservado);
         $this->assertSame('anulada', $venta->fresh()->estado);
     }
 
@@ -112,16 +125,21 @@ class VentaStockTest extends TestCase
         ])->assertSessionHas('exito');
         $this->assertEquals(10, (float) $producto->fresh()->stock);
 
-        // Vende las 10 → stock 0
+        // La venta reserva las 10 unidades, aunque aún no salgan físicamente.
         $this->actingAs($this->admin)->post(route('ventas.store'), $this->payloadVenta($producto, 10))
             ->assertSessionHas('exito');
+        $producto->refresh();
+        $this->assertEquals(10, (float) $producto->stock);
+        $this->assertEquals(10, (float) $producto->stock_reservado);
 
         // Eliminar la compra debe bloquearse, no dejar negativo
         $compra = Compra::firstOrFail();
         $this->actingAs($this->admin)->delete(route('compras.destroy', $compra))
             ->assertSessionHas('error');
 
-        $this->assertEquals(0, (float) $producto->fresh()->stock);
+        $producto->refresh();
+        $this->assertEquals(10, (float) $producto->stock);
+        $this->assertEquals(10, (float) $producto->stock_reservado);
         $this->assertNotNull(Compra::find($compra->id));
     }
 }

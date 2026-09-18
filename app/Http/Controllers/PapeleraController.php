@@ -88,7 +88,7 @@ class PapeleraController extends Controller
 
     /**
      * Restaurar una venta revierte lo que hizo el eliminado:
-     * vuelve a descontar stock y restaura su comprobante.
+     * vuelve a reservar lo pendiente, descuenta lo entregado y restaura su comprobante.
      */
     protected function restaurarVenta(Venta $venta, StockService $stock)
     {
@@ -102,7 +102,8 @@ class PapeleraController extends Controller
                         if (! $det->producto_id) {
                             continue;
                         }
-                        $disponible = (float) ($bloqueados[$det->producto_id]->stock ?? 0);
+                        $producto = $bloqueados[$det->producto_id];
+                        $disponible = round((float) $producto->stock - (float) $producto->stock_reservado, 2);
                         if ($disponible < (float) $det->cantidad) {
                             throw new InvalidArgumentException(
                                 "No se puede restaurar {$venta->numero}: stock insuficiente para {$det->codigo_producto} (disp. {$disponible}, req. {$det->cantidad})."
@@ -111,7 +112,14 @@ class PapeleraController extends Controller
                     }
                     foreach ($venta->detalles as $det) {
                         if ($det->producto_id) {
-                            $stock->disminuirStock($det->producto, (float) $det->cantidad);
+                            $entregado = round((float) $det->cantidad_entregada, 2);
+                            $pendiente = round(max(0, (float) $det->cantidad - $entregado), 2);
+                            if ($entregado > 0) {
+                                $stock->disminuirStock($det->producto, $entregado);
+                            }
+                            if ($pendiente > 0) {
+                                $stock->reservarStock($det->producto->fresh(), $pendiente);
+                            }
                         }
                     }
                 }

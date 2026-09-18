@@ -51,15 +51,19 @@ class PapeleraRestoreTest extends TestCase
         return Venta::latest('id')->firstOrFail();
     }
 
-    public function test_restaurar_venta_reaplica_stock_y_comprobante(): void
+    public function test_restaurar_venta_reaplica_reserva_y_comprobante(): void
     {
         $producto = $this->crearProducto(10);
         $venta = $this->crearVenta($producto, 4);
-        $this->assertEquals(6, (float) $producto->fresh()->stock);
+        $producto->refresh();
+        $this->assertEquals(10, (float) $producto->stock);
+        $this->assertEquals(4, (float) $producto->stock_reservado);
 
         $this->actingAs($this->admin)->delete(route('ventas.destroy', $venta))
             ->assertSessionHas('exito');
-        $this->assertEquals(10, (float) $producto->fresh()->stock);
+        $producto->refresh();
+        $this->assertEquals(10, (float) $producto->stock);
+        $this->assertEquals(0, (float) $producto->stock_reservado);
         $this->assertTrue($venta->fresh()->trashed());
         $this->assertSame(1, Comprobante::onlyTrashed()->where('origen_venta_id', $venta->id)->count());
 
@@ -68,7 +72,9 @@ class PapeleraRestoreTest extends TestCase
             ->assertSessionHas('exito');
 
         $this->assertFalse($venta->fresh()->trashed());
-        $this->assertEquals(6, (float) $producto->fresh()->stock);
+        $producto->refresh();
+        $this->assertEquals(10, (float) $producto->stock);
+        $this->assertEquals(4, (float) $producto->stock_reservado);
         $this->assertSame(0, Comprobante::onlyTrashed()->where('origen_venta_id', $venta->id)->count());
     }
 
@@ -78,18 +84,24 @@ class PapeleraRestoreTest extends TestCase
         $venta = $this->crearVenta($producto, 10);
 
         $this->actingAs($this->admin)->delete(route('ventas.destroy', $venta));
-        $this->assertEquals(10, (float) $producto->fresh()->stock);
+        $producto->refresh();
+        $this->assertEquals(10, (float) $producto->stock);
+        $this->assertEquals(0, (float) $producto->stock_reservado);
 
-        // Otra venta consume el stock liberado
+        // Otra venta reserva el stock liberado.
         $this->crearVenta($producto, 10);
-        $this->assertEquals(0, (float) $producto->fresh()->stock);
+        $producto->refresh();
+        $this->assertEquals(10, (float) $producto->stock);
+        $this->assertEquals(10, (float) $producto->stock_reservado);
 
         $this->actingAs($this->admin)
             ->post(route('papelera.restaurar', ['modelo' => 'ventas', 'id' => $venta->id]))
             ->assertSessionHas('error');
 
         $this->assertTrue($venta->fresh()->trashed());
-        $this->assertEquals(0, (float) $producto->fresh()->stock);
+        $producto->refresh();
+        $this->assertEquals(10, (float) $producto->stock);
+        $this->assertEquals(10, (float) $producto->stock_reservado);
     }
 
     public function test_restaurar_compra_revierte_stock_y_comprobante(): void

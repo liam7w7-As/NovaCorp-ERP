@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\AlmacenController;
 use App\Http\Controllers\AuditoriaController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\BusquedaGlobalController;
@@ -83,6 +84,14 @@ Route::middleware(['auth'])->group(function () {
     });
     Route::post('/ventas/{venta}/anular', [VentaController::class, 'anular'])->name('ventas.anular')->middleware('permiso:admin');
     Route::delete('/ventas/{venta}', [VentaController::class, 'destroy'])->name('ventas.destroy')->middleware('permiso:admin');
+
+    Route::middleware('permiso:almacen')->prefix('almacen')->name('almacen.')->group(function () {
+        Route::get('/', [AlmacenController::class, 'index'])->name('index');
+        Route::get('/ventas/{venta}', [AlmacenController::class, 'show'])->name('show');
+        Route::post('/ventas/{venta}/entregar', [AlmacenController::class, 'store'])->name('entregar');
+        Route::get('/notas/{notaEntrega}', [AlmacenController::class, 'imprimir'])->name('notas.imprimir');
+        Route::post('/notas/{notaEntrega}/anular', [AlmacenController::class, 'anular'])->name('notas.anular');
+    });
 
     // Comprobantes (eliminar: solo admin)
     Route::middleware('permiso:comprobantes')->group(function () {
@@ -186,6 +195,7 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/cuentas', [CajaController::class, 'cuentas'])->name('cuentas.index')->middleware('permiso:comprobantes');
     Route::post('/cuentas/cobrar/{venta}', [CajaController::class, 'cobrar'])->name('cuentas.cobrar')->middleware('permiso:comprobantes');
     Route::post('/cuentas/pagar/{compra}', [CajaController::class, 'pagar'])->name('cuentas.pagar')->middleware('permiso:comprobantes');
+    Route::get('/cuentas/recibo/{cobroVenta}', [CajaController::class, 'recibo'])->name('cuentas.recibo')->middleware('permiso:comprobantes');
 
     // Caja diaria
     Route::get('/caja', [CajaController::class, 'index'])->name('caja.index')->middleware('permiso:comprobantes');

@@ -22,7 +22,7 @@
       @endif
     </form>
     <span class="codigo-chip">{{ $producto->codigo }}</span>
-    <span style="font-size:13px;">Stock actual: <strong>{{ $producto->stock }}</strong> · Valorizado: <strong>Bs {{ formatoMoneda((float) $producto->stock * (float) $producto->costo) }}</strong></span>
+    <span style="font-size:13px;">Stock físico: <strong>{{ $producto->stock }}</strong> · Disponible: <strong>{{ formatoMoneda($producto->stock_disponible) }}</strong> · Valorizado: <strong>Bs {{ formatoMoneda((float) $producto->stock * (float) $producto->costo) }}</strong></span>
     <a class="btn-giseca btn-outline btn-sm" href="{{ route('kardex.index') }}">← Volver</a>
   </div>
 </div>

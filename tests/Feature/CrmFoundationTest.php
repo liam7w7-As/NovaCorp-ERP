@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Http\Controllers\CrmController;
 use App\Models\CanalWhatsapp;
 use App\Models\EtapaCrm;
 use App\Models\Lead;
@@ -263,6 +264,40 @@ class CrmFoundationTest extends TestCase
             ->assertOk()
             ->assertSee('Lead urgente WhatsApp')
             ->assertDontSee('Lead ya respondido');
+    }
+
+    public function test_follow_up_filter_finds_old_unanswered_leads_before_board_limit(): void
+    {
+        $admin = $this->usuario('admin');
+        $canal = CanalWhatsapp::factory()->create();
+        $etapa = EtapaCrm::inicial();
+        $leadAntiguo = Lead::factory()->for($etapa, 'etapa')->for($canal, 'canalWhatsapp')->create([
+            'vendedor_id' => $admin->id,
+            'nombre' => 'Lead antiguo sin responder',
+            'etapa_actualizada_at' => now()->subDays(30),
+            'ultima_interaccion_at' => now()->subDays(30),
+        ]);
+        MensajeWhatsapp::factory()->for($leadAntiguo)->create([
+            'direccion' => 'entrante',
+            'contenido' => 'Sigo esperando respuesta',
+            'ocurrio_at' => now()->subDays(30),
+        ]);
+
+        Lead::factory()
+            ->count(CrmController::MAX_LEADS_TABLERO + 1)
+            ->for($etapa, 'etapa')
+            ->for($canal, 'canalWhatsapp')
+            ->create([
+                'vendedor_id' => $admin->id,
+                'etapa_actualizada_at' => now(),
+                'ultima_interaccion_at' => now(),
+            ]);
+
+        $this->actingAs($admin)
+            ->get(route('crm.index', ['seguimiento' => 'sin_responder']))
+            ->assertOk()
+            ->assertSee('Lead antiguo sin responder')
+            ->assertSee('Sigo esperando respuesta');
     }
 
     public function test_a_seller_cannot_drag_another_sellers_lead(): void

@@ -80,7 +80,7 @@
   <div class="card-giseca seccion-form" style="margin-bottom:18px;">
     <h6 style="margin:0 0 14px; border-bottom:2px solid var(--gc-primario); padding-bottom:6px; display:inline-block; font-weight:700;">Reserva de Stock</h6>
     <label style="display:flex; align-items:center; gap:8px; font-size:13.5px;">
-      <input type="checkbox" name="reserva_stock" value="1" {{ (isset($proforma) && $proforma->reserva_stock) ? 'checked' : '' }}> Reservar stock para esta proforma (solo anota la intención; el stock real se descuenta al Convertir a Venta)
+      <input type="checkbox" name="reserva_stock" value="1" {{ (isset($proforma) && $proforma->reserva_stock) ? 'checked' : '' }}> Reservar intención comercial para esta proforma; la venta reserva stock y almacén descuenta la salida física.
     </label>
   </div>
 
@@ -102,7 +102,7 @@ buscadorPf.addEventListener('input', function() {
     const r = await fetch("{{ route('proformas.buscar-producto') }}?q=" + encodeURIComponent(t), { headers: { 'Accept': 'application/json' } });
     const lista = await r.json();
     resultadosPf.innerHTML = lista.map(p =>
-      `<div class="item" data-id="${p.id}" data-codigo="${p.codigo}" data-desc="${p.descripcion.replace(/"/g, '&quot;')}" data-marca="${(p.marca || '').replace(/"/g, '&quot;')}" data-precio="${p.precio}" data-stock="${p.stock}" style="padding:10px 14px; cursor:pointer; border-bottom:1px solid var(--gc-borde); font-size:13px;"><strong>${p.codigo}</strong> — ${p.descripcion} <span style="color:var(--gc-gris-claro)">(${p.marca || ''}) Stock: ${p.stock}</span></div>`
+      `<div class="item" data-id="${p.id}" data-codigo="${p.codigo}" data-desc="${p.descripcion.replace(/"/g, '&quot;')}" data-marca="${(p.marca || '').replace(/"/g, '&quot;')}" data-precio="${p.precio}" data-stock="${p.stock_disponible ?? p.stock}" style="padding:10px 14px; cursor:pointer; border-bottom:1px solid var(--gc-borde); font-size:13px;"><strong>${p.codigo}</strong> — ${p.descripcion} <span style="color:var(--gc-gris-claro)">(${p.marca || ''}) Disponible: ${p.stock_disponible ?? p.stock}</span></div>`
     ).join('') || '<div class="item" style="padding:10px 14px;">Sin resultados</div>';
     resultadosPf.querySelectorAll('.item[data-id]').forEach(el => {
       el.addEventListener('click', () => agregarProductoPf({ id: el.dataset.id, codigo: el.dataset.codigo, descripcion: el.dataset.desc, marca: el.dataset.marca, precio: el.dataset.precio }));

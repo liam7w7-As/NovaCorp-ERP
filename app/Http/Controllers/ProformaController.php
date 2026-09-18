@@ -306,7 +306,7 @@ class ProformaController extends Controller
             })
             ->orderBy('descripcion')
             ->limit(15)
-            ->get(['id', 'codigo', 'equivalente', 'descripcion', 'marca', 'unidad', 'precio', 'stock']);
+            ->get(['id', 'codigo', 'equivalente', 'descripcion', 'marca', 'unidad', 'precio', 'stock', 'stock_reservado']);
 
         return response()->json($lista);
     }

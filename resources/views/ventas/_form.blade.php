@@ -15,9 +15,14 @@
     @if ($method === 'PUT')
         @method('PUT')
     @endif
+    @php
+        $modalidadActual = old('modalidad', isset($venta) ? $venta->modalidad : 'contado');
+        $creditoDiasActual = old('credito_dias', isset($venta) ? ($venta->credito_dias ?? 30) : 30);
+        $creditoCuotasActual = old('credito_cuotas', isset($venta) ? ($venta->credito_cuotas ?? 1) : 1);
+    @endphp
 
     <div class="card-giseca" style="margin-bottom:16px;">
-        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+        <div class="venta-form-grid">
             <div>
                 <label class="form-label-giseca">Cliente *</label>
                 <select id="v_cliente" name="cliente_id" class="form-control-giseca"
@@ -52,12 +57,24 @@
             <div><label class="form-label-giseca">Modalidad</label>
                 <select id="v_modalidad" name="modalidad" class="form-control-giseca">
                     <option value="contado"
-                        {{ (isset($venta) ? $venta->modalidad : old('modalidad', 'contado')) === 'contado' ? 'selected' : '' }}>
+                        {{ $modalidadActual === 'contado' ? 'selected' : '' }}>
                         Contado</option>
                     <option value="credito"
-                        {{ (isset($venta) ? $venta->modalidad : old('modalidad')) === 'credito' ? 'selected' : '' }}>
+                        {{ $modalidadActual === 'credito' ? 'selected' : '' }}>
                         Crédito</option>
                 </select>
+            </div>
+            <div id="creditoCamposVenta" class="venta-credito-campos">
+                <div>
+                    <label class="form-label-giseca">Días entre cuotas</label>
+                    <input type="number" min="1" max="3650" id="v_credito_dias" name="credito_dias"
+                        class="form-control-giseca" value="{{ $creditoDiasActual }}">
+                </div>
+                <div>
+                    <label class="form-label-giseca">Cantidad de cuotas</label>
+                    <input type="number" min="1" max="36" id="v_credito_cuotas" name="credito_cuotas"
+                        class="form-control-giseca" value="{{ $creditoCuotasActual }}">
+                </div>
             </div>
             <div><label class="form-label-giseca">Fecha</label><input type="date" id="v_fecha" name="fecha"
                     class="form-control-giseca"
@@ -86,55 +103,57 @@
             </div>
         </div>
 
-        <table class="tabla-giseca" style="margin-top:12px;" id="tablaItemsVenta">
-            <thead>
-                <tr>
-                    <th>Código</th>
-                    <th>Descripción</th>
-                    <th style="width:80px">Cant.</th>
-                    <th style="width:110px">Precio</th>
-                    <th style="width:100px">Total</th>
-                    <th></th>
-                </tr>
-            </thead>
-            <tbody>
-                @if (isset($venta))
-                    @foreach ($venta->detalles as $i => $d)
-                        <tr>
-                            <td><span class="codigo-chip">{{ $d->codigo_producto }}</span><input type="hidden"
-                                    name="items[{{ $i }}][producto_id]"
-                                    value="{{ $d->producto_id }}"><input type="hidden" class="vi-desc"
-                                    value="{{ $d->descripcion_producto }}"></td>
-                            <td>{{ $d->descripcion_producto }}</td>
-                            <td>
-                                <input type="number" step="1" min="1"
-                                    name="items[{{ $i }}][cantidad]" value="{{ intval($d->cantidad) }}"
-                                    class="vi-cant" oninput="recalcularVenta()"
-                                    style="border:1px solid var(--gc-borde); 
-        border-radius:4px; 
-        padding:5px 6px; 
-        font-size:12.5px; 
-        width:100%; 
-        background:var(--gc-superficie); 
-        color:var(--gc-texto);">
-                            </td>
-                            <td><input type="number" step="0.01" min="0"
-                                    name="items[{{ $i }}][precio]" value="{{ $d->precio_unitario }}"
-                                    class="vi-precio" oninput="recalcularVenta()"
-                                    style="border:1px solid var(--gc-borde); border-radius:4px; padding:5px 6px; font-size:12.5px; width:100%; background:var(--gc-superficie); color:var(--gc-texto);">
-                            </td>
-                            <td class="text-end vi-total">{{ number_format($d->subtotal, 2) }}</td>
-                            <td><button type="button" class="btn-giseca btn-outline btn-icon btn-sm"
-                                    onclick="this.closest('tr').remove(); reindexarVenta(); recalcularVenta();">✕</button>
-                            </td>
-                        </tr>
-                    @endforeach
-                @endif
-            </tbody>
-        </table>
+        <div class="venta-items-scroll">
+            <table class="tabla-giseca" id="tablaItemsVenta">
+                <thead>
+                    <tr>
+                        <th>Código</th>
+                        <th>Descripción</th>
+                        <th style="width:80px">Cant.</th>
+                        <th style="width:110px">Precio</th>
+                        <th style="width:100px">Total</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (isset($venta))
+                        @foreach ($venta->detalles as $i => $d)
+                            <tr>
+                                <td><span class="codigo-chip">{{ $d->codigo_producto }}</span><input type="hidden"
+                                        name="items[{{ $i }}][producto_id]"
+                                        value="{{ $d->producto_id }}"><input type="hidden" class="vi-desc"
+                                        value="{{ $d->descripcion_producto }}"></td>
+                                <td>{{ $d->descripcion_producto }}</td>
+                                <td>
+                                    <input type="number" step="1" min="1"
+                                        name="items[{{ $i }}][cantidad]" value="{{ intval($d->cantidad) }}"
+                                        class="vi-cant" oninput="recalcularVenta()"
+                                        style="border:1px solid var(--gc-borde); 
+            border-radius:4px; 
+            padding:5px 6px; 
+            font-size:12.5px; 
+            width:100%; 
+            background:var(--gc-superficie); 
+            color:var(--gc-texto);">
+                                </td>
+                                <td><input type="number" step="0.01" min="0"
+                                        name="items[{{ $i }}][precio]" value="{{ $d->precio_unitario }}"
+                                        class="vi-precio" oninput="recalcularVenta()"
+                                        style="border:1px solid var(--gc-borde); border-radius:4px; padding:5px 6px; font-size:12.5px; width:100%; background:var(--gc-superficie); color:var(--gc-texto);">
+                                </td>
+                                <td class="text-end vi-total">{{ number_format($d->subtotal, 2) }}</td>
+                                <td><button type="button" class="btn-giseca btn-outline btn-icon btn-sm"
+                                        onclick="this.closest('tr').remove(); reindexarVenta(); recalcularVenta();">✕</button>
+                                </td>
+                            </tr>
+                        @endforeach
+                    @endif
+                </tbody>
+            </table>
+        </div>
 
-        <div style="display:flex; justify-content:flex-end; margin-top:10px;">
-            <div style="width:260px;">
+        <div class="venta-totales-wrap" style="display:flex; justify-content:flex-end; margin-top:10px;">
+            <div class="venta-totales" style="width:260px;">
                 <div style="display:flex; justify-content:space-between;"><span>Subtotal:</span><strong
                         id="v_lblSubtotal">0.00</strong></div>
                 <div style="display:flex; justify-content:space-between; align-items:center;">
@@ -152,17 +171,36 @@
         </div>
     </div>
 
-    <div style="display:flex; gap:8px;">
+    <div class="venta-form-actions" style="display:flex; gap:8px;">
         <button type="submit" class="btn-giseca btn-primario">Guardar Venta</button>
         <a href="{{ route('ventas.index') }}" class="btn-giseca btn-outline">Cancelar</a>
     </div>
 </form>
 
+@push('styles')
+    <style>
+        .venta-form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.venta-credito-campos{grid-column:1/-1;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;background:var(--gc-fondo);border:1px solid var(--gc-borde);border-radius:7px;padding:10px}.venta-items-scroll{overflow-x:auto;margin-top:12px}.venta-items-scroll .tabla-giseca{min-width:760px}@media(max-width:760px){.venta-form-grid,.venta-credito-campos{grid-template-columns:1fr}.venta-form-actions{display:grid!important}.venta-form-actions .btn-giseca{justify-content:center}.venta-totales-wrap{justify-content:stretch!important}.venta-totales{width:100%!important}}
+    </style>
+@endpush
+
 <script>
     let idxVenta = {{ isset($venta) ? $venta->detalles->count() : 0 }};
     const buscadorVenta = document.getElementById('v_buscador');
     const resultadosVenta = document.getElementById('resultadosBusquedaVenta');
+    const modalidadVenta = document.getElementById('v_modalidad');
+    const creditoCamposVenta = document.getElementById('creditoCamposVenta');
+    const creditoDiasVenta = document.getElementById('v_credito_dias');
+    const creditoCuotasVenta = document.getElementById('v_credito_cuotas');
     let timerVenta = null;
+
+    function actualizarCamposCreditoVenta() {
+        const esCredito = modalidadVenta.value === 'credito';
+        creditoCamposVenta.style.display = esCredito ? 'grid' : 'none';
+        creditoDiasVenta.disabled = !esCredito;
+        creditoCuotasVenta.disabled = !esCredito;
+    }
+
+    modalidadVenta.addEventListener('change', actualizarCamposCreditoVenta);
 
     buscadorVenta.addEventListener('input', function() {
         clearTimeout(timerVenta);
@@ -185,7 +223,7 @@ data-codigo="${p.codigo}"
 data-interno="${p.codigo_interno || ''}"
 data-desc="${p.descripcion.replace(/"/g, '&quot;')}"
 data-precio="${p.precio}"
-data-stock="${p.stock}"
+data-stock="${p.stock_disponible ?? p.stock}"
 
 style="padding:9px 14px; cursor:pointer; border-bottom:1px solid var(--gc-borde); font-size:13px;">
 
@@ -202,7 +240,7 @@ ${p.codigo}
 ${p.descripcion}
 
 <span style="color:var(--gc-gris-claro);">
-Stock: ${p.stock}
+Disponible: ${p.stock_disponible ?? p.stock}
 </span>
 
 </div>`
@@ -366,5 +404,6 @@ Stock: ${p.stock}
         }
     });
 
+    actualizarCamposCreditoVenta();
     recalcularVenta();
 </script>

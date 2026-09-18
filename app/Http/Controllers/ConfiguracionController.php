@@ -264,7 +264,11 @@ class ConfiguracionController extends Controller
             [
 
                 'comprobante_pagos',
+                'cobro_ventas',
                 'comprobantes',
+                'detalle_nota_entregas',
+                'nota_entregas',
+                'cuota_ventas',
                 'detalle_venta',
                 'detalle_compra',
                 'detalle_proforma',

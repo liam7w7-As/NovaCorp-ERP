@@ -2,13 +2,17 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\CuotaVenta;
+use App\Models\Producto;
 use App\Models\Proforma;
 use App\Models\Venta;
+use Illuminate\Contracts\View\View;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class ReporteController extends Controller
 {
-    public function index(Request $request)
+    public function index(Request $request): View
     {
         // Filtro de facturación:
         // todos = todas las ventas
@@ -103,6 +107,57 @@ class ReporteController extends Controller
                 ->count(),
         ];
 
+        $hoy = now()->toDateString();
+        $limiteSemana = now()->addDays(7)->toDateString();
+
+        $cuotasPendientes = CuotaVenta::query()
+            ->whereIn('estado', ['pendiente', 'parcial'])
+            ->whereColumn('pagado', '<', 'monto')
+            ->whereHas('venta', fn ($query) => $query->where('estado', 'activa'));
+
+        $ventasEntregaQuery = Venta::with(['sucursal:id,nombre', 'detalles:id,venta_id,cantidad,cantidad_entregada'])
+            ->where('estado', 'activa')
+            ->where('origen_siat', false)
+            ->whereIn('entrega_estado', ['pendiente', 'parcial']);
+
+        $productosSinFichaQuery = Producto::query()
+            ->whereNull('ficha_tecnica_path');
+
+        $alertasOperativas = [
+            'total_cobrar' => (float) (clone $cuotasPendientes)
+                ->sum(DB::raw('monto - pagado')),
+            'total_vencido' => (float) (clone $cuotasPendientes)
+                ->whereDate('fecha_vencimiento', '<', $hoy)
+                ->sum(DB::raw('monto - pagado')),
+            'por_vencer' => (clone $cuotasPendientes)
+                ->whereBetween('fecha_vencimiento', [$hoy, $limiteSemana])
+                ->count(),
+            'entregas_pendientes' => (clone $ventasEntregaQuery)
+                ->count(),
+            'productos_sin_ficha' => (clone $productosSinFichaQuery)
+                ->count(),
+        ];
+
+        $cuotasCriticas = (clone $cuotasPendientes)
+            ->with(['venta:id,numero,cliente_nombre,fecha,total,pagado,modalidad,estado'])
+            ->whereDate('fecha_vencimiento', '<=', $limiteSemana)
+            ->orderBy('fecha_vencimiento')
+            ->orderBy('id')
+            ->limit(8)
+            ->get();
+
+        $ventasEntrega = (clone $ventasEntregaQuery)
+            ->orderByRaw("CASE entrega_estado WHEN 'parcial' THEN 0 ELSE 1 END")
+            ->orderBy('fecha')
+            ->orderBy('id')
+            ->limit(8)
+            ->get();
+
+        $productosSinFicha = (clone $productosSinFichaQuery)
+            ->orderBy('descripcion')
+            ->limit(8)
+            ->get(['id', 'codigo', 'descripcion', 'marca', 'stock', 'stock_reservado', 'stock_min', 'ficha_tecnica_path']);
+
         return view('reportes.index', [
             'emitidas' => $emitidas,
             'convertidas' => $convertidas,
@@ -114,6 +169,10 @@ class ReporteController extends Controller
             'ventasMes' => $ventasMes,
             'kpiVentas' => $kpiVentas,
             'facturaFiltro' => $tipoFactura,
+            'alertasOperativas' => $alertasOperativas,
+            'cuotasCriticas' => $cuotasCriticas,
+            'ventasEntrega' => $ventasEntrega,
+            'productosSinFicha' => $productosSinFicha,
         ]);
     }
 }

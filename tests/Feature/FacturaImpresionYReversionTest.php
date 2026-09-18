@@ -12,6 +12,7 @@ use App\Models\Sucursal;
 use App\Models\User;
 use App\Models\Venta;
 use App\Services\FacturaService;
+use Database\Seeders\RolesPermisosSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Mail;
 use Tests\TestCase;
@@ -31,6 +32,8 @@ class FacturaImpresionYReversionTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+
+        $this->seed(RolesPermisosSeeder::class);
 
         $this->admin = User::firstOrCreate(
             ['email' => 'admin_test@giseca.com'],
@@ -196,6 +199,54 @@ class FacturaImpresionYReversionTest extends TestCase
             return $mail->hasTo('cliente_nuevo@empresa.bo') &&
                    $mail->factura->id === $this->factura->id;
         });
+    }
+
+    public function test_vendedor_no_puede_ver_ni_descargar_factura_de_otra_sucursal(): void
+    {
+        $sucursalAjena = Sucursal::create([
+            'nombre' => 'Sucursal La Paz',
+            'codigo' => 8,
+            'municipio' => 'La Paz',
+            'activa' => true,
+        ]);
+        $vendedor = User::factory()->create([
+            'rol' => 'vendedor',
+            'activo' => true,
+            'sucursal_id' => $sucursalAjena->id,
+        ]);
+        $this->factura->update(['xml_firmado' => '<factura>ok</factura>']);
+
+        $this->actingAs($vendedor)
+            ->get(route('facturas.index'))
+            ->assertOk()
+            ->assertDontSee($this->factura->numero_factura);
+
+        $this->actingAs($vendedor)
+            ->get(route('facturas.show', $this->factura))
+            ->assertForbidden();
+
+        $this->actingAs($vendedor)
+            ->get(route('facturas.xml', $this->factura))
+            ->assertForbidden();
+    }
+
+    public function test_vendedor_no_puede_exportar_anulaciones_de_otra_sucursal(): void
+    {
+        $sucursalAjena = Sucursal::create([
+            'nombre' => 'Sucursal Cochabamba',
+            'codigo' => 9,
+            'municipio' => 'Cochabamba',
+            'activa' => true,
+        ]);
+        $vendedor = User::factory()->create([
+            'rol' => 'vendedor',
+            'activo' => true,
+            'sucursal_id' => $sucursalAjena->id,
+        ]);
+
+        $this->actingAs($vendedor)
+            ->get(route('facturas.reporte', ['sucursal_id' => $this->sucursal->id]))
+            ->assertForbidden();
     }
 
     public function test_reporte_anulaciones_csv_con_sucursal(): void

@@ -44,8 +44,8 @@ class KardexController extends Controller
         $hasta = $data['hasta'] ?? null;
 
         $enRango = fn ($query, string $relacion) => $query->whereHas($relacion, function ($q) use ($relacion, $desde, $hasta) {
-            if ($relacion === 'venta') {
-                $q->where('estado', 'activa');
+            if ($relacion === 'notaEntrega') {
+                $q->where('estado', 'emitida');
             }
             if ($desde) {
                 $q->whereDate('fecha', '>=', $desde);
@@ -61,8 +61,8 @@ class KardexController extends Controller
             $entradas = (float) $producto->detalleCompras()
                 ->whereHas('compra', fn ($q) => $q->whereDate('fecha', '<', $desde))
                 ->sum('cantidad');
-            $salidas = (float) $producto->detalleVentas()
-                ->whereHas('venta', fn ($q) => $q->where('estado', 'activa')->whereDate('fecha', '<', $desde))
+            $salidas = (float) $producto->detalleNotaEntregas()
+                ->whereHas('notaEntrega', fn ($q) => $q->where('estado', 'emitida')->whereDate('fecha', '<', $desde))
                 ->sum('cantidad');
             $saldoInicial = round($entradas - $salidas, 2);
         }
@@ -80,18 +80,18 @@ class KardexController extends Controller
                 'detalle' => $d->compra->proveedor_nombre,
                 'entrada' => (float) $d->cantidad,
                 'salida' => 0,
-                'costo' => (float) $d->precio_unitario,
+                'costo' => (float) $producto->costo,
             ]);
         }
-        foreach ($enRango($producto->detalleVentas()->with('venta'), 'venta')->get() as $d) {
-            if (! $d->venta || $d->venta->estado !== 'activa') {
+        foreach ($enRango($producto->detalleNotaEntregas()->with('notaEntrega.venta'), 'notaEntrega')->get() as $d) {
+            if (! $d->notaEntrega || $d->notaEntrega->estado !== 'emitida') {
                 continue;
             }
             $movimientos->push([
-                'fecha' => $d->venta->fecha->format('Y-m-d'),
-                'documento' => $d->venta->numero,
-                'tipo' => 'VENTA',
-                'detalle' => $d->venta->cliente_nombre,
+                'fecha' => $d->notaEntrega->fecha->format('Y-m-d'),
+                'documento' => $d->notaEntrega->numero,
+                'tipo' => 'ENTREGA',
+                'detalle' => $d->notaEntrega->cliente_nombre.' · Venta '.($d->notaEntrega->venta?->numero ?? '—'),
                 'entrada' => 0,
                 'salida' => (float) $d->cantidad,
                 'costo' => (float) $d->precio_unitario,

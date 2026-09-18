@@ -7,7 +7,9 @@ use App\Models\Compra;
 use App\Models\Comprobante;
 use App\Models\Configuracion;
 use App\Models\DetalleCompra;
+use App\Models\DetalleNotaEntrega;
 use App\Models\DetalleVenta;
+use App\Models\NotaEntrega;
 use App\Models\Producto;
 use App\Models\PuntoVenta;
 use App\Models\Sucursal;
@@ -88,7 +90,20 @@ class RendimientoIntegridadTest extends TestCase
         DetalleVenta::create([
             'venta_id' => $venta->id, 'producto_id' => $producto->id,
             'codigo_producto' => $producto->codigo, 'descripcion_producto' => 'x',
-            'cantidad' => 4, 'precio_unitario' => 20, 'subtotal' => 80,
+            'cantidad' => 4, 'cantidad_entregada' => 4, 'precio_unitario' => 20, 'subtotal' => 80,
+        ]);
+        $nota = NotaEntrega::create([
+            'numero' => 'NE-K-1',
+            'venta_id' => $venta->id,
+            'fecha' => now()->toDateString(),
+            'cliente_nombre' => 'Cli',
+        ]);
+        DetalleNotaEntrega::create([
+            'nota_entrega_id' => $nota->id,
+            'producto_id' => $producto->id,
+            'codigo_producto' => $producto->codigo,
+            'descripcion_producto' => 'x',
+            'cantidad' => 4,
         ]);
 
         $response = $this->actingAs($this->admin)
@@ -96,7 +111,7 @@ class RendimientoIntegridadTest extends TestCase
 
         $response->assertStatus(200);
         $response->assertSee('Saldo inicial', false);
-        $response->assertSee('NV-K-1', false);
+        $response->assertSee('NE-K-1', false);
     }
 
     public function test_cuentas_muestra_saldo_contado_editado(): void

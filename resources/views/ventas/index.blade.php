@@ -3,7 +3,7 @@
 @section('title', 'Ventas')
 
 @section('content')
-    <div style="display:grid; grid-template-columns:repeat(5,1fr); gap:14px; margin-bottom:18px;">
+    <div class="ventas-kpis">
         <div class="kpi naranja">
             <div class="label"><i class="bi bi-cash-coin"></i> Total vendido</div>
             <div class="value">Bs {{ formatoMoneda($kpis['total']) }}</div>
@@ -15,6 +15,18 @@
         <div class="kpi azul">
             <div class="label"><i class="bi bi-hourglass-split"></i> Ventas crédito</div>
             <div class="value">Bs {{ formatoMoneda($kpis['credito']) }}</div>
+        </div>
+        <div class="kpi rojo">
+            <div class="label"><i class="bi bi-exclamation-triangle"></i> Vencido</div>
+            <div class="value">Bs {{ formatoMoneda($kpis['vencido']) }}</div>
+        </div>
+        <div class="kpi azul">
+            <div class="label"><i class="bi bi-wallet2"></i> Saldo por cobrar</div>
+            <div class="value">Bs {{ formatoMoneda($kpis['saldo_cobrar']) }}</div>
+        </div>
+        <div class="kpi verde">
+            <div class="label"><i class="bi bi-clipboard-check"></i> Por entregar</div>
+            <div class="value">{{ $kpis['por_entregar'] }}</div>
         </div>
         <div class="kpi info">
             <div class="label"><i class="bi bi-receipt-cutoff"></i> Débito fiscal (SIAT)</div>
@@ -69,7 +81,7 @@
             {{ $errors->first() }}</div>
     @endif
 
-    <div class="card-giseca" style="padding:0; overflow:hidden;">
+    <div class="card-giseca ventas-scroll" style="padding:0;">
         <table class="tabla-giseca">
             <thead>
                 <tr>
@@ -79,13 +91,33 @@
                     <th>Fecha</th>
                     <th>Cliente</th>
                     <th class="text-end">Total</th>
+                    <th>Cobranza</th>
                     <th class="text-end">Débito Fiscal</th>
+                    <th>Almacén</th>
                     <th>Comp. Ingreso</th>
                     <th></th>
                 </tr>
             </thead>
             <tbody>
                 @forelse($ventas as $v)
+                    @php
+                        $proximaCuota = $v->proxima_cuota;
+                        $estadoCobranza = $v->estado_cobranza;
+                        $estadoCobranzaLabel = [
+                            'cobrada' => 'Cobrada',
+                            'sin_plan' => 'Sin plan',
+                            'vencida' => 'Vencida',
+                            'por_vencer' => 'Por vencer',
+                            'vigente' => 'Vigente',
+                        ][$estadoCobranza] ?? ucfirst($estadoCobranza);
+                        $estadoCobranzaClase = [
+                            'cobrada' => 'estado-aprobada',
+                            'vencida' => 'estado-rechazada',
+                            'por_vencer' => 'estado-enviada',
+                            'vigente' => 'estado-borrador',
+                            'sin_plan' => 'estado-borrador',
+                        ][$estadoCobranza] ?? 'estado-borrador';
+                    @endphp
                     <tr class="{{ $v->estado === 'anulada' ? 'alerta' : '' }}">
                         <td>
                             <span class="codigo-chip">{{ $v->numero }}</span>
@@ -112,14 +144,41 @@
                         <td>{{ $v->fecha->format('Y-m-d') }}</td>
                         <td>{{ $v->cliente_nombre }}</td>
                         <td class="text-end fw-bold">Bs {{ formatoMoneda($v->total) }}</td>
+                        <td>
+                            @if ($v->estado === 'anulada')
+                                <span class="estado estado-borrador">—</span>
+                            @else
+                                <span class="estado {{ $estadoCobranzaClase }}">{{ $estadoCobranzaLabel }}</span>
+                                <div class="ventas-muted">
+                                    @if ($v->saldo > 0)
+                                        Saldo Bs {{ formatoMoneda($v->saldo) }}
+                                    @else
+                                        Pagada
+                                    @endif
+                                </div>
+                                @if ($proximaCuota)
+                                    <div class="ventas-muted">Cuota #{{ $proximaCuota->numero }} · {{ $proximaCuota->fecha_vencimiento->format('Y-m-d') }}</div>
+                                @endif
+                            @endif
+                        </td>
                         <td class="text-end">{{ $v->debito_fiscal ? 'Bs ' . formatoMoneda($v->debito_fiscal) : '—' }}</td>
+                        <td>
+                            @if ($v->origen_siat || $v->estado === 'anulada')
+                                <span class="estado estado-borrador">—</span>
+                            @else
+                                <span class="estado {{ $v->entrega_estado === 'entregada' ? 'estado-aprobada' : ($v->entrega_estado === 'parcial' ? 'estado-enviada' : 'estado-borrador') }}">
+                                    {{ ucfirst($v->entrega_estado) }}
+                                </span>
+                                <div style="font-size:10.5px; color:var(--gc-gris-claro); margin-top:3px;">{{ $v->porcentaje_entrega }}%</div>
+                            @endif
+                        </td>
                         <td><a href="{{ route('comprobantes.index', ['q' => $v->comprobante_numero]) }}"><span
                                     class="codigo-chip equivalente">{{ $v->comprobante_numero ?: '—' }}</span></a></td>
                         <td class="text-end" style="white-space:nowrap;">
                             @if ($v->estado === 'activa')
                                 @can('admin')
                                     <form method="POST" action="{{ route('ventas.anular', $v) }}" style="display:inline;"
-                                        onsubmit="return confirm('¿Anular la venta {{ $v->numero }}? Se revertirá el stock.')">
+                                        onsubmit="return confirm('¿Anular la venta {{ $v->numero }}? Se actualizarán las reservas y entregas de almacén.')">
                                         @csrf<button type="submit" class="btn-giseca btn-outline btn-icon btn-sm"
                                             title="Anular"><i class="bi bi-x-circle"></i></button></form>
                                 @endcan
@@ -127,7 +186,21 @@
                                 <span style="font-size:11px; color:var(--gc-gris-claro);">Anulada</span>
                             @endif
                             <button class="btn-giseca btn-outline btn-icon btn-sm" title="Ver detalle"
-                                onclick='verDetalle(@json($v->load('detalles')))'><i class="bi bi-eye"></i></button>
+                                onclick='verDetalle(@json($v->loadMissing('detalles')))'><i class="bi bi-eye"></i></button>
+                            @can('almacen')
+                                @if ($v->estado === 'activa' && ! $v->origen_siat && $v->entrega_estado !== 'entregada')
+                                    <a class="btn-giseca btn-outline btn-icon btn-sm" title="Preparar entrega"
+                                        href="{{ route('almacen.show', $v) }}"><i class="bi bi-clipboard-check"
+                                            style="color:var(--gc-primario);"></i></a>
+                                @endif
+                            @endcan
+                            @can('comprobantes')
+                                @if ($v->estado === 'activa' && $v->saldo > 0)
+                                    <a class="btn-giseca btn-outline btn-icon btn-sm" title="Cobrar saldo"
+                                        href="{{ route('cuentas.index', ['q' => $v->numero]) }}"><i class="bi bi-cash-coin"
+                                            style="color:var(--gc-verde);"></i></a>
+                                @endif
+                            @endcan
                             @if ($v->tipo === 'con_factura' && $v->estado === 'activa')
                                 @if ($v->facturaElectronica && $v->facturaElectronica->estado !== 'rechazada')
                                     <a class="btn-giseca btn-outline btn-icon btn-sm"
@@ -148,7 +221,7 @@
                                 href="{{ route('ventas.edit', $v) }}"><i class="bi bi-pencil"></i></a>
                             @can('admin')
                                 <form method="POST" action="{{ route('ventas.destroy', $v) }}" style="display:inline;"
-                                    onsubmit="return confirm('¿Eliminar la venta {{ $v->numero }}? Se revertirá el stock y se borrará su comprobante.')">
+                                    onsubmit="return confirm('¿Eliminar la venta {{ $v->numero }}? Se actualizará almacén y se borrará su comprobante.')">
                                     @csrf @method('DELETE')<button type="submit"
                                         class="btn-giseca btn-outline btn-icon btn-sm" title="Eliminar"><i
                                             class="bi bi-trash" style="color:var(--gc-rojo);"></i></button></form>
@@ -157,7 +230,7 @@
                     </tr>
                 @empty
                     <tr>
-                        <td colspan="9" style="text-align:center; color:var(--gc-gris-claro); padding:40px;"><i
+                        <td colspan="11" style="text-align:center; color:var(--gc-gris-claro); padding:40px;"><i
                                 class="bi bi-cash-coin"
                                 style="font-size:30px; display:block; margin-bottom:8px; opacity:.5;"></i>Sin ventas
                             registradas todavía.</td>
@@ -265,6 +338,31 @@
     <style>
         .tabla-detalle-venta {
             border-collapse: collapse;
+        }
+
+        .ventas-scroll {
+            overflow-x: auto;
+        }
+
+        .ventas-kpis {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 14px;
+            margin-bottom: 18px;
+        }
+
+        .ventas-kpis .kpi.rojo {
+            border-top-color: var(--gc-rojo);
+        }
+
+        .ventas-scroll>.tabla-giseca {
+            min-width: 1380px;
+        }
+
+        .ventas-muted {
+            font-size: 10.5px;
+            color: var(--gc-gris-claro);
+            margin-top: 3px;
         }
 
         .tabla-detalle-venta th,

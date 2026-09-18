@@ -6,6 +6,7 @@ use App\Traits\Auditable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Comprobante extends Model
@@ -41,6 +42,11 @@ class Comprobante extends Model
     public function ventaOrigen(): BelongsTo
     {
         return $this->belongsTo(Venta::class, 'origen_venta_id');
+    }
+
+    public function cobroVenta(): HasOne
+    {
+        return $this->hasOne(CobroVenta::class);
     }
 
     public function getEsManualAttribute(): bool

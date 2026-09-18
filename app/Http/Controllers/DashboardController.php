@@ -92,7 +92,7 @@ class DashboardController extends Controller
             ->limit(6)
             ->get();
 
-        $stockCritico = Producto::whereColumn('stock', '<=', 'stock_min')
+        $stockCritico = Producto::whereRaw('(stock - stock_reservado) <= stock_min')
             ->orderBy('descripcion')
             ->limit(6)
             ->get();

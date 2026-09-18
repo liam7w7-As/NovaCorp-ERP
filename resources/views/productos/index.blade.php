@@ -28,6 +28,7 @@
     @endif
 
     <div class="card-giseca" style="padding:0; overflow:hidden;">
+        <div class="productos-scroll">
         <table class="tabla-giseca">
             <thead>
                 <tr>
@@ -71,12 +72,12 @@
                         'clase' => 'text-end',
                         'sort' => $sort ?? 'descripcion',
                         'dir' => $dir ?? 'asc',
-                    ])<th></th>
+                    ])<th>Ficha</th><th></th>
                 </tr>
             </thead>
             <tbody id="tbodyProductos">
                 @forelse($productos as $p)
-                    <tr class="{{ (float) $p->stock <= (float) $p->stock_min ? 'alerta' : '' }}"
+                    <tr class="{{ $p->en_alerta ? 'alerta' : '' }}"
                         data-search="{{ strtolower($p->codigo_interno . ' ' . $p->codigo . ' ' . ($p->equivalente ?? '') . ' ' . $p->descripcion . ' ' . ($p->marca ?? '')) }}">
                         <td>
                             <span class="codigo-chip" style="background:#e8f5e9;color:#198754;">
@@ -91,8 +92,30 @@
                         <td class="text-end">{{ formatoMoneda($p->costo) }}</td>
                         <td class="text-end">{{ formatoMoneda($p->precio) }}</td>
                         <td class="text-end"
-                            style="{{ (float) $p->stock <= (float) $p->stock_min ? 'color:var(--gc-rojo); font-weight:700;' : '' }}">
-                            {{ rtrim(rtrim(number_format((float) $p->stock, 2, '.', ''), '0'), '.') }}</td>
+                            style="{{ $p->en_alerta ? 'color:var(--gc-rojo); font-weight:700;' : '' }}">
+                            {{ rtrim(rtrim(number_format((float) $p->stock, 2, '.', ''), '0'), '.') }}
+                            @if ((float) $p->stock_reservado > 0)
+                                <div class="producto-stock-detalle">
+                                    Disp. {{ formatoMoneda($p->stock_disponible) }} · Res. {{ formatoMoneda($p->stock_reservado) }}
+                                </div>
+                            @endif
+                        </td>
+                        <td>
+                            <div class="producto-adjuntos-tabla">
+                                @if ($p->ficha_tecnica_url)
+                                    <a class="producto-adjunto-link" href="{{ $p->ficha_tecnica_url }}" target="_blank"
+                                        rel="noopener" title="{{ $p->ficha_tecnica_nombre ?: 'Ficha técnica' }}"><i
+                                            class="bi bi-file-earmark-pdf"></i> Ficha</a>
+                                @else
+                                    <span class="producto-adjunto-vacio">Sin ficha</span>
+                                @endif
+                                @if (count($p->imagenes_producto))
+                                    <a class="producto-adjunto-link" href="{{ $p->imagenes_producto[0]['url'] }}"
+                                        target="_blank" rel="noopener"><i class="bi bi-images"></i>
+                                        {{ count($p->imagenes_producto) }}</a>
+                                @endif
+                            </div>
+                        </td>
                         <td class="text-end" style="white-space:nowrap;">
                             <button class="btn-giseca btn-outline btn-icon btn-sm" title="Editar"
                                 onclick='editarProducto(@json($p))'><i class="bi bi-pencil"></i></button>
@@ -111,7 +134,7 @@
                     </tr>
                 @empty
                     <tr>
-                        <td colspan="9" style="text-align:center; color:var(--gc-gris-claro); padding:40px;"><i
+                        <td colspan="10" style="text-align:center; color:var(--gc-gris-claro); padding:40px;"><i
                                 class="bi bi-box-seam"
                                 style="font-size:30px; display:block; margin-bottom:8px; opacity:.5;"></i>Sin productos
                             registrados.</td>
@@ -119,6 +142,7 @@
                 @endforelse
             </tbody>
         </table>
+        </div>
     </div>
     <div id="sinResultados" style="display:none; text-align:center; color:var(--gc-gris-claro); padding:40px;"><i
             class="bi bi-box-seam" style="font-size:30px; display:block; margin-bottom:8px; opacity:.5;"></i>Sin productos
@@ -151,7 +175,7 @@
     <div class="modal-giseca" id="modalProducto">
         <div class="modal-box">
             <h6 id="modalTitulo">Nuevo Producto</h6>
-            <form id="formProducto" method="POST" action="{{ route('productos.store') }}">
+            <form id="formProducto" method="POST" action="{{ route('productos.store') }}" enctype="multipart/form-data">
                 @csrf
                 <div id="methodContainer"></div>
                 <div>
@@ -208,6 +232,20 @@
                                 min="0" class="form-control-giseca" id="f_stockMin" name="stock_min"
                                 value="0"></div>
                     </div>
+                    <div class="producto-adjuntos-form">
+                        <div>
+                            <label class="form-label-giseca">Ficha técnica (PDF)</label>
+                            <input type="file" class="form-control-giseca" id="f_fichaTecnica"
+                                name="ficha_tecnica" accept="application/pdf">
+                            <div id="fichaTecnicaActual" class="producto-adjunto-actual"></div>
+                        </div>
+                        <div>
+                            <label class="form-label-giseca">Imágenes del producto</label>
+                            <input type="file" class="form-control-giseca" id="f_imagenes" name="imagenes[]"
+                                accept="image/jpeg,image/png,image/webp" multiple>
+                            <div id="imagenesActuales" class="producto-imagenes-actuales"></div>
+                        </div>
+                    </div>
                     <div style="display:flex; gap:8px; margin-top:18px;">
                         <button type="submit" class="btn-giseca btn-primario">Guardar</button>
                         <button type="button" class="btn-giseca btn-outline" onclick="cerrarModal()">Cancelar</button>
@@ -263,6 +301,12 @@
     </div>
 @endsection
 
+@push('styles')
+    <style>
+        .productos-scroll{overflow-x:auto}.productos-scroll .tabla-giseca{min-width:1120px}.producto-stock-detalle{font-size:10.5px;color:var(--gc-gris);font-weight:600;white-space:nowrap}.producto-adjuntos-tabla{display:flex;flex-direction:column;align-items:flex-start;gap:4px;min-width:82px}.producto-adjunto-link{display:inline-flex;align-items:center;gap:4px;color:var(--gc-info);font-size:11px;font-weight:700;text-decoration:none}.producto-adjunto-link i{font-size:13px}.producto-adjunto-vacio{font-size:10.5px;color:var(--gc-gris-claro)}.producto-adjuntos-form{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px;border:1px solid var(--gc-borde);border-radius:7px;padding:12px;background:var(--gc-fondo)}.producto-adjunto-actual,.producto-imagenes-actuales{display:grid;gap:6px;margin-top:8px}.producto-archivo-actual{display:flex;align-items:center;justify-content:space-between;gap:8px;border:1px solid var(--gc-borde);border-radius:6px;padding:8px;background:var(--gc-superficie);font-size:11.5px}.producto-archivo-actual a{color:var(--gc-info);font-weight:700;text-decoration:none;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.producto-archivo-actual label{display:flex;align-items:center;gap:5px;color:var(--gc-rojo);font-size:10.5px;white-space:nowrap}.producto-imagen-chip{display:grid;grid-template-columns:34px minmax(0,1fr) auto;align-items:center;gap:8px;border:1px solid var(--gc-borde);border-radius:6px;padding:6px;background:var(--gc-superficie)}.producto-imagen-chip img{width:34px;height:34px;object-fit:cover;border-radius:5px;background:var(--gc-fondo)}.producto-imagen-chip a{color:var(--gc-texto);font-size:11px;text-decoration:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.producto-imagen-chip label{display:flex;align-items:center;gap:5px;color:var(--gc-rojo);font-size:10.5px;white-space:nowrap}@media(max-width:760px){.producto-adjuntos-form{grid-template-columns:1fr}.modal-box{width:min(96vw,680px)}}
+    </style>
+@endpush
+
 @push('scripts')
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <script>
@@ -307,6 +351,9 @@
                 .getElementById(id).value = '');
             document.getElementById('f_unidad').value = 'PZA';
             ['f_costo', 'f_precio', 'f_stock', 'f_stockMin'].forEach(id => document.getElementById(id).value = 0);
+            document.getElementById('f_fichaTecnica').value = '';
+            document.getElementById('f_imagenes').value = '';
+            pintarAdjuntosProducto({});
             document.getElementById('modalProducto').classList.add('abierto');
         }
 
@@ -326,11 +373,40 @@
             document.getElementById('f_precio').value = p.precio ?? 0;
             document.getElementById('f_stock').value = p.stock ?? 0;
             document.getElementById('f_stockMin').value = p.stock_min ?? 0;
+            document.getElementById('f_fichaTecnica').value = '';
+            document.getElementById('f_imagenes').value = '';
+            pintarAdjuntosProducto(p);
             document.getElementById('modalProducto').classList.add('abierto');
         }
 
         function cerrarModal() {
             document.getElementById('modalProducto').classList.remove('abierto');
+        }
+
+        function pintarAdjuntosProducto(p) {
+            const ficha = document.getElementById('fichaTecnicaActual');
+            const imagenes = document.getElementById('imagenesActuales');
+            const fichaUrl = p.ficha_tecnica_url || '';
+            const fichaNombre = p.ficha_tecnica_nombre || 'Ficha técnica';
+            ficha.innerHTML = fichaUrl ? `
+                <div class="producto-archivo-actual">
+                    <a href="${fichaUrl}" target="_blank" rel="noopener"><i class="bi bi-file-earmark-pdf"></i> ${escaparHtml(fichaNombre)}</a>
+                    <label><input type="checkbox" name="quitar_ficha_tecnica" value="1"> Quitar</label>
+                </div>` : '<span class="producto-adjunto-vacio">Aún no tiene ficha técnica cargada.</span>';
+
+            const lista = Array.isArray(p.imagenes_producto) ? p.imagenes_producto : [];
+            imagenes.innerHTML = lista.length ? lista.map((img, indice) => `
+                <div class="producto-imagen-chip">
+                    <img src="${img.url}" alt="${escaparHtml(img.nombre || 'Imagen del producto')}" loading="lazy">
+                    <a href="${img.url}" target="_blank" rel="noopener">${escaparHtml(img.nombre || 'Imagen del producto')}</a>
+                    <label><input type="checkbox" name="quitar_imagenes[]" value="${indice}"> Quitar</label>
+                </div>`).join('') : '<span class="producto-adjunto-vacio">Sin imágenes asociadas.</span>';
+        }
+
+        function escaparHtml(valor) {
+            const nodo = document.createElement('div');
+            nodo.textContent = valor || '';
+            return nodo.innerHTML;
         }
 
         (function() {

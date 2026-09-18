@@ -6,7 +6,11 @@ use App\Models\Producto;
 use App\Services\StockService;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Picqer\Barcode\BarcodeGeneratorHTML;
 
 class ProductoController extends Controller
@@ -72,32 +76,47 @@ class ProductoController extends Controller
             'precio' => 'nullable|numeric|min:0',
             'stock' => 'nullable|numeric|min:0',
             'stock_min' => 'nullable|numeric|min:0',
+            'ficha_tecnica' => 'nullable|file|mimetypes:application/pdf|max:20480',
+            'imagenes' => 'nullable|array|max:8',
+            'imagenes.*' => 'file|mimetypes:image/jpeg,image/png,image/webp|max:8192',
+            'quitar_ficha_tecnica' => 'nullable|boolean',
+            'quitar_imagenes' => 'nullable|array',
+            'quitar_imagenes.*' => 'integer|min:0',
         ];
     }
 
     public function store(Request $request)
     {
         $data = $request->validate($this->reglas());
+        $atributos = Arr::except($data, [
+            'ficha_tecnica',
+            'imagenes',
+            'quitar_ficha_tecnica',
+            'quitar_imagenes',
+        ]);
 
-        $data['unidad'] = $data['unidad'] ?? 'PZA';
-        $data['costo'] = $data['costo'] ?? 0;
-        $data['precio'] = $data['precio'] ?? 0;
-        $data['stock'] = $data['stock'] ?? 0;
-        $data['stock_min'] = $data['stock_min'] ?? 0;
+        $atributos['unidad'] = $atributos['unidad'] ?? 'PZA';
+        $atributos['costo'] = $atributos['costo'] ?? 0;
+        $atributos['precio'] = $atributos['precio'] ?? 0;
+        $atributos['stock'] = $atributos['stock'] ?? 0;
+        $atributos['stock_min'] = $atributos['stock_min'] ?? 0;
 
         // El código interno se genera con conteo: ante colisión concurrente
         // se regenera con conteo fresco (la columna es UNIQUE).
+        $producto = null;
         for ($i = 0; ; $i++) {
             try {
-                Producto::create($data);
+                $producto = Producto::create($atributos);
                 break;
             } catch (QueryException $e) {
                 if ($i >= 3 || ! str_contains($e->getMessage(), 'codigo_interno')) {
                     throw $e;
                 }
-                $data['codigo_interno'] = null;
+                $atributos['codigo_interno'] = null;
             }
         }
+
+        $this->actualizarAdjuntosProducto($request, $producto);
 
         return back()->with('exito', 'Producto creado');
     }
@@ -105,8 +124,15 @@ class ProductoController extends Controller
     public function update(Request $request, Producto $producto)
     {
         $data = $request->validate($this->reglas($producto));
+        $atributos = Arr::except($data, [
+            'ficha_tecnica',
+            'imagenes',
+            'quitar_ficha_tecnica',
+            'quitar_imagenes',
+        ]);
 
-        $producto->update($data);
+        $producto->update($atributos);
+        $this->actualizarAdjuntosProducto($request, $producto->fresh());
 
         return back()->with('exito', 'Producto actualizado');
     }
@@ -139,7 +165,7 @@ class ProductoController extends Controller
             })
             ->orderBy('descripcion')
             ->limit(15)
-            ->get(['id', 'codigo_interno', 'codigo', 'equivalente', 'descripcion', 'marca', 'unidad', 'costo', 'precio', 'stock', 'stock_min']);
+            ->get(['id', 'codigo_interno', 'codigo', 'equivalente', 'descripcion', 'marca', 'unidad', 'costo', 'precio', 'stock', 'stock_reservado', 'stock_min']);
 
         return response()->json($lista);
     }
@@ -167,6 +193,7 @@ class ProductoController extends Controller
 
         $creados = 0;
         $actualizados = 0;
+        $restaurados = 0;
         $errores = [];
 
         $obtener = function (array $fila, array $claves) {
@@ -204,6 +231,9 @@ class ProductoController extends Controller
                     continue;
                 }
                 $codigo = trim((string) $obtener($fila, ['Codigo', 'Código']));
+                // Excel arrastra espacios invisibles (nbsp, etc.) que trim() no
+                // quita y rompen la coincidencia con lo ya registrado.
+                $codigo = preg_replace('/^[\pZ\pC]+|[\pZ\pC]+$/u', '', $codigo) ?? '';
                 if ($codigo === '') {
                     continue; // fila vacía, se ignora
                 }
@@ -220,56 +250,205 @@ class ProductoController extends Controller
                 $stockExcel = (float) ($stockRaw === '' ? 0 : $stockRaw);
                 $stockMin = (float) ($stockMinRaw === '' ? 0 : $stockMinRaw);
 
-                $existente = Producto::whereRaw('LOWER(codigo) = ?', [mb_strtolower($codigo)])->first();
+                // Buscar incluyendo papelera: un código borrado debe
+                // restaurarse, no intentar INSERT (error 1062).
+                $existente = Producto::withTrashed()
+                    ->whereRaw('LOWER(TRIM(codigo)) = ?', [mb_strtolower($codigo)])
+                    ->first();
+                if (! $existente) {
+                    // Respaldo exacto para variantes invisibles restantes.
+                    $existente = Producto::withTrashed()->where('codigo', $codigo)->first();
+                }
+
+                $datosFila = compact(
+                    'descripcion', 'equivalente', 'marca', 'unidad',
+                    'costoRaw', 'precioRaw', 'stockMinRaw',
+                    'costo', 'precio', 'stockMin', 'stockExcel'
+                );
 
                 if ($existente) {
-                    DB::transaction(function () use ($existente, $descripcion, $equivalente, $marca, $unidad, $costoRaw, $precioRaw, $stockMinRaw, $stockExcel, $costo, $precio, $stockMin, $stock) {
-                        $bloqueado = Producto::whereKey($existente->id)->lockForUpdate()->firstOrFail();
-                        // No pisar costo/precio/stock_min con 0 cuando la celda viene vacía.
-                        $bloqueado->update([
-                            'descripcion' => $descripcion,
-                            'equivalente' => $equivalente ?: $bloqueado->equivalente,
-                            'marca' => $marca ?: $bloqueado->marca,
-                            'unidad' => $unidad,
-                            'costo' => $costoRaw === '' ? $bloqueado->costo : $costo,
-                            'precio' => $precioRaw === '' ? $bloqueado->precio : $precio,
-                            'stock_min' => $stockMinRaw === '' ? $bloqueado->stock_min : $stockMin,
-                        ]);
-                        if ($stockExcel > 0) {
-                            $stock->aumentarStock($bloqueado->fresh(), $stockExcel);
-                        }
-                    });
-                    $actualizados++;
+                    $restaurado = false;
+                    if ($existente->trashed()) {
+                        $existente->restore();
+                        $restaurado = true;
+                    }
+                    $this->aplicarActualizacionImportada($existente, $datosFila, $stock);
+                    $restaurado ? $restaurados++ : $actualizados++;
                 } else {
-                    Producto::create([
-                        'codigo' => $codigo,
-                        'descripcion' => $descripcion,
-                        'equivalente' => $equivalente ?: null,
-                        'marca' => $marca ?: null,
-                        'unidad' => $unidad,
-                        'costo' => $costo,
-                        'precio' => $precio,
-                        'stock' => $stockExcel,
-                        'stock_min' => $stockMin,
-                    ]);
-                    $creados++;
+                    try {
+                        Producto::create([
+                            'codigo' => $codigo,
+                            'descripcion' => $descripcion,
+                            'equivalente' => $equivalente ?: null,
+                            'marca' => $marca ?: null,
+                            'unidad' => $unidad,
+                            'costo' => $costo,
+                            'precio' => $precio,
+                            'stock' => $stockExcel,
+                            'stock_min' => $stockMin,
+                        ]);
+                        $creados++;
+                    } catch (QueryException $e) {
+                        if (! $this->esErrorDuplicado($e)) {
+                            throw $e;
+                        }
+                        // El código apareció entre la búsqueda y el INSERT
+                        // (o hay una variante no detectada): recuperar y actualizar.
+                        $existente = Producto::withTrashed()->where('codigo', $codigo)->first()
+                            ?? Producto::withTrashed()
+                                ->whereRaw('LOWER(TRIM(codigo)) = ?', [mb_strtolower($codigo)])
+                                ->firstOrFail();
+                        $restaurado = false;
+                        if ($existente->trashed()) {
+                            $existente->restore();
+                            $restaurado = true;
+                        }
+                        $this->aplicarActualizacionImportada($existente, $datosFila, $stock);
+                        $restaurado ? $restaurados++ : $actualizados++;
+                    }
                 }
             } catch (\Throwable $e) {
                 $errores[] = 'Fila '.($i + 2).': '.$e->getMessage();
             }
         }
 
-        $mensaje = "Importación completa: {$creados} nuevo(s), {$actualizados} actualizado(s)";
+        $mensaje = "Importación completa: {$creados} nuevo(s), {$actualizados} actualizado(s), {$restaurados} restaurado(s)";
+        if (! empty($errores)) {
+            $mensaje .= ', '.count($errores).' fila(s) con error';
+        }
 
         if ($request->expectsJson()) {
             return response()->json([
                 'creados' => $creados,
                 'actualizados' => $actualizados,
+                'restaurados' => $restaurados,
                 'errores' => $errores,
                 'message' => $mensaje,
             ]);
         }
 
         return back()->with('exito', $mensaje);
+    }
+
+    /**
+     * Aplica los datos de una fila Excel sobre un producto existente
+     * (con lock): actualiza ficha sin pisar con vacíos y SUMA stock.
+     *
+     * @param  array{descripcion:string,equivalente:string,marca:string,unidad:string,costoRaw:mixed,precioRaw:mixed,stockMinRaw:mixed,costo:float,precio:float,stockMin:float,stockExcel:float}  $p
+     */
+    protected function aplicarActualizacionImportada(Producto $existente, array $p, StockService $stock): void
+    {
+        DB::transaction(function () use ($existente, $p, $stock) {
+            $bloqueado = Producto::withTrashed()->whereKey($existente->id)->lockForUpdate()->firstOrFail();
+            // No pisar costo/precio/stock_min con 0 cuando la celda viene vacía.
+            $bloqueado->update([
+                'descripcion' => $p['descripcion'],
+                'equivalente' => $p['equivalente'] ?: $bloqueado->equivalente,
+                'marca' => $p['marca'] ?: $bloqueado->marca,
+                'unidad' => $p['unidad'],
+                'costo' => $p['costoRaw'] === '' ? $bloqueado->costo : $p['costo'],
+                'precio' => $p['precioRaw'] === '' ? $bloqueado->precio : $p['precio'],
+                'stock_min' => $p['stockMinRaw'] === '' ? $bloqueado->stock_min : $p['stockMin'],
+            ]);
+            if ($p['stockExcel'] > 0) {
+                $stock->aumentarStock($bloqueado->fresh(), $p['stockExcel']);
+            }
+        });
+    }
+
+    protected function esErrorDuplicado(QueryException $e): bool
+    {
+        $mensaje = $e->getMessage();
+
+        return str_contains($mensaje, 'Duplicate entry') || str_contains($mensaje, 'UNIQUE constraint');
+    }
+
+    private function actualizarAdjuntosProducto(Request $request, Producto $producto): void
+    {
+        $atributos = [];
+
+        if ($request->boolean('quitar_ficha_tecnica') || $request->hasFile('ficha_tecnica')) {
+            $this->eliminarArchivoPublico($producto->ficha_tecnica_path);
+            $atributos['ficha_tecnica_path'] = null;
+            $atributos['ficha_tecnica_nombre'] = null;
+            $atributos['ficha_tecnica_mime'] = null;
+            $atributos['ficha_tecnica_tamano'] = null;
+        }
+
+        if ($request->hasFile('ficha_tecnica')) {
+            $ficha = $this->guardarArchivoProducto($producto, $request->file('ficha_tecnica'), 'fichas');
+            $atributos['ficha_tecnica_path'] = $ficha['path'];
+            $atributos['ficha_tecnica_nombre'] = $ficha['nombre'];
+            $atributos['ficha_tecnica_mime'] = $ficha['mime'];
+            $atributos['ficha_tecnica_tamano'] = $ficha['tamano'];
+        }
+
+        $imagenes = collect($producto->imagenes ?? [])->values();
+        $imagenesCambiaron = false;
+        $indicesQuitar = collect($request->input('quitar_imagenes', []))
+            ->map(fn (mixed $indice): int => (int) $indice)
+            ->unique()
+            ->values()
+            ->all();
+
+        if ($indicesQuitar !== []) {
+            foreach ($imagenes as $indice => $imagen) {
+                if (in_array((int) $indice, $indicesQuitar, true)) {
+                    $this->eliminarArchivoPublico($imagen['path'] ?? null);
+                }
+            }
+
+            $imagenes = $imagenes
+                ->reject(fn (array $imagen, int $indice): bool => in_array($indice, $indicesQuitar, true))
+                ->values();
+            $imagenesCambiaron = true;
+        }
+
+        foreach ($request->file('imagenes', []) as $imagen) {
+            if ($imagen instanceof UploadedFile) {
+                $imagenes->push($this->guardarArchivoProducto($producto, $imagen, 'imagenes'));
+                $imagenesCambiaron = true;
+            }
+        }
+
+        if ($imagenesCambiaron) {
+            $atributos['imagenes'] = $imagenes->isEmpty() ? null : $imagenes->values()->all();
+        }
+
+        if ($atributos !== []) {
+            $producto->update($atributos);
+        }
+    }
+
+    /** @return array{path: string, nombre: string, mime: string|null, tamano: int|null} */
+    private function guardarArchivoProducto(Producto $producto, UploadedFile $archivo, string $carpeta): array
+    {
+        $path = $archivo->storeAs(
+            "productos/{$producto->id}/{$carpeta}",
+            $this->nombreArchivoSeguro($archivo),
+            'public'
+        );
+
+        return [
+            'path' => $path,
+            'nombre' => $archivo->getClientOriginalName(),
+            'mime' => $archivo->getMimeType() ?: $archivo->getClientMimeType(),
+            'tamano' => $archivo->getSize() ?: null,
+        ];
+    }
+
+    private function nombreArchivoSeguro(UploadedFile $archivo): string
+    {
+        $base = Str::slug(pathinfo($archivo->getClientOriginalName(), PATHINFO_FILENAME)) ?: 'archivo';
+        $extension = strtolower($archivo->getClientOriginalExtension() ?: $archivo->extension() ?: 'bin');
+
+        return now()->format('YmdHis').'-'.Str::random(8).'-'.$base.'.'.$extension;
+    }
+
+    private function eliminarArchivoPublico(?string $path): void
+    {
+        if ($path) {
+            Storage::disk('public')->delete($path);
+        }
     }
 }
