@@ -41,7 +41,7 @@ class FacturaService
             throw new InvalidArgumentException('Solo se puede facturar una venta ACTIVA.');
         }
         if ($venta->facturaElectronica()->where('estado', '!=', 'rechazada')->exists()) {
-            throw new InvalidArgumentException('Esta venta ya tiene una factura electrónica.');
+            throw new InvalidArgumentException('Esta venta ya tiene una factura.');
         }
         if ($venta->detalles->isEmpty()) {
             throw new InvalidArgumentException('La venta no tiene items para facturar.');

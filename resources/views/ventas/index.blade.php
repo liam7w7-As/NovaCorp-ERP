@@ -210,7 +210,7 @@
                                 @else
                                     @can('facturas.emitir')
                                         <button class="btn-giseca btn-outline btn-icon btn-sm"
-                                            title="Emitir factura electrónica"
+                                            title="Emitir factura"
                                             onclick="abrirModalEmitir('{{ route('facturas.emitir', $v) }}', '{{ $v->numero }}')"><i
                                                 class="bi bi-file-earmark-plus"
                                                 style="color:var(--gc-primario);"></i></button>
@@ -268,7 +268,7 @@
 
     <div class="modal-giseca" id="modalEmitir">
         <div class="modal-box">
-            <h6>Emitir Factura Electrónica</h6>
+            <h6>Emitir Factura</h6>
             <p style="font-size:12.5px; color:var(--gc-gris);" id="emitirTexto">Se firmará y enviará al SIN.</p>
             <form method="POST" action="" id="formEmitir">
                 @csrf

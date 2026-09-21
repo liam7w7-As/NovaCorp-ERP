@@ -27,7 +27,7 @@ class FacturaCorreo extends Mailable
         return new Envelope(
             subject: $this->motivo === 'anulada'
                 ? "Factura {$n} anulada - GISECA SRL"
-                : "Factura electrónica {$n} - GISECA SRL",
+                : "Factura {$n} - GISECA SRL",
         );
     }
 
