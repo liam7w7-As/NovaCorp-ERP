@@ -104,4 +104,15 @@ class SiatPilotoGuardTest extends TestCase
         $vacio = (object) [];
         $this->assertSame('', $metodo->invoke(null, $vacio));
     }
+
+    public function test_normalizar_lista_acepta_arreglo_objeto_y_vacio(): void
+    {
+        $metodo = new \ReflectionMethod(SiatService::class, 'normalizarLista');
+
+        $obj = (object) ['codigo' => '1'];
+        $this->assertSame([$obj], $metodo->invoke(null, $obj));
+        $this->assertSame([$obj], $metodo->invoke(null, [$obj]));
+        $this->assertSame([], $metodo->invoke(null, null));
+        $this->assertSame([], $metodo->invoke(null, []));
+    }
 }

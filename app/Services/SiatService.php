@@ -89,6 +89,23 @@ class SiatService
         return '';
     }
 
+    /**
+     * Normaliza una lista SIN (arreglo, objeto único o vacío) a arreglo.
+     *
+     * @return array<int, mixed>
+     */
+    protected static function normalizarLista($lista): array
+    {
+        if (is_array($lista)) {
+            return array_is_list($lista) ? $lista : [$lista];
+        }
+        if (is_object($lista)) {
+            return [$lista];
+        }
+
+        return [];
+    }
+
     protected static function vigenciaReal(?string $fechaVigencia, \DateTimeInterface $respaldo): \DateTimeInterface
     {
         if ($fechaVigencia) {
@@ -660,7 +677,7 @@ class SiatService
                 $nodo = $resp->sincronizarListaLeyendasFacturaResponse->RespuestaListaLeyendasFactura ?? null;
             }
             $leyendas = [];
-            foreach ((array) ($nodo ? ($nodo->listaLeyendas ?? []) : []) as $item) {
+            foreach (self::normalizarLista($nodo ? ($nodo->listaLeyendas ?? null) : null) as $item) {
                 if (! empty($item->descripcionLeyenda)) {
                     $leyendas[] = (string) $item->descripcionLeyenda;
                 }
@@ -735,7 +752,7 @@ class SiatService
                 ?? $respuesta->listaProductos
                 ?? [];
 
-            foreach ((array) $lista as $item) {
+            foreach (self::normalizarLista($lista) as $item) {
                 $codigo = (string) (
                     $item->codigo
                     ?? $item->codigoClasificador
