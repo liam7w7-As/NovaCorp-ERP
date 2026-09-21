@@ -536,7 +536,7 @@ class SiatService
                 'codigoDescripcion' => self::primerMensaje($r),
                 'raw' => json_encode($resp, JSON_PARTIAL_OUTPUT_ON_ERROR),
             ];
-            $this->auditar('recepcionFactura', ['cuf' => $cuf, 'hash' => $hash], $res, $ok);
+            $this->auditar('recepcionFactura', ['cuf' => $cuf, 'hash' => $hash, 'solicitud' => \Illuminate\Support\Arr::except($params, ['archivo'])], $res, $ok);
 
             return $res;
         } catch (Throwable $e) {
