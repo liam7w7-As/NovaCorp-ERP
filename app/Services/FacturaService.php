@@ -86,6 +86,17 @@ class FacturaService
 
         $cufdActual = $emision === 2 ? null : ($puntoVenta->cufd ?: (string) SiatConfig::get('siat_cufd'));
 
+        // En modo real, un CUFD/CUIS de simulador (SIM-) sería rechazado por
+        // el SIN: exigir identidad real antes de gastar numeración.
+        if (! SiatConfig::esSimulador() && $emision === 1) {
+            $cuisActual = $puntoVenta->cuis ?: (string) SiatConfig::get('siat_cuis');
+            if (str_starts_with((string) $cufdActual, 'SIM-') || str_starts_with($cuisActual, 'SIM-')) {
+                throw new InvalidArgumentException(
+                    'El punto de venta tiene CUIS/CUFD de simulador. En modo REAL solicita primero CUIS y CUFD reales en Sucursales.'
+                );
+            }
+        }
+
         // Sin CUFD vigente no se emite (igual que exige el SIN en línea).
         if ($emision === 1 && ! $this->tieneCufdVigente($puntoVenta, $cufdActual)) {
             throw new InvalidArgumentException(

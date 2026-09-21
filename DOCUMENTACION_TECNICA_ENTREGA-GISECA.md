@@ -477,7 +477,8 @@ Cuando la empresa obtenga las credenciales oficiales otorgadas por el SIN:
 3. **Sincronizar Catálogos:**
    - Ir a `/catalogos` y hacer clic en **"Sincronizar todos"** para descargar las tablas paramétricas reales asignadas al NIT.
 4. **Solicitar CUIS y CUFD:**
-   - Ir a `/sucursales` y en cada Punto de Venta pulsar **"Obtener CUIS"** y luego **"Obtener CUFD"**.
+    - Ir a `/sucursales` y en cada Punto de Venta pulsar **"Obtener CUIS"** y luego **"Obtener CUFD"**.
+    - ⚠️ Los códigos `SIM-` del simulador **no sirven en modo real**: al cambiar a REAL hay que pedir CUIS/CUFD nuevos (el sistema lo exige y bloquea la emisión con mensaje si detecta identidad simulada).
 
 ### 9.2. Automatizaciones Recomendadas (Cron / Scheduler)
 

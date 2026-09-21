@@ -51,17 +51,47 @@ class SiatService
         }
     }
 
+    /**
+     * Primera descripción de mensajesList (puede venir objeto único o arreglo).
+     */
+    protected static function primerMensaje($nodo): string
+    {
+        $lista = $nodo->mensajesList ?? null;
+        if (is_array($lista)) {
+            return (string) ($lista[0]->descripcion ?? '');
+        }
+        if (is_object($lista)) {
+            return (string) ($lista->descripcion ?? '');
+        }
+
+        return '';
+    }
+
+    protected static function vigenciaReal(?string $fechaVigencia, \DateTimeInterface $respaldo): \DateTimeInterface
+    {
+        if ($fechaVigencia) {
+            try {
+                return new \DateTimeImmutable($fechaVigencia);
+            } catch (Throwable) {
+                // cae al respaldo
+            }
+        }
+
+        return $respaldo;
+    }
+
     // ---------------- CUIS ----------------
 
     public function solicitarCuis(int $codigoSucursal = 0, int $codigoPuntoVenta = 0, ?int $puntoVentaId = null): array
     {
+        // Orden según secuencia del XSD (solicitudCuis).
         $params = [
             'codigoAmbiente' => SiatConfig::codigoAmbienteSin(),
             'codigoModalidad' => SiatConfig::codigoModalidadSin(),
-            'codigoSistema' => (string) SiatConfig::get('siat_codigo_sistema'),
-            'nit' => (int) SiatConfig::get('siat_nit'),
-            'codigoSucursal' => $codigoSucursal,
             'codigoPuntoVenta' => $codigoPuntoVenta,
+            'codigoSistema' => (string) SiatConfig::get('siat_codigo_sistema'),
+            'codigoSucursal' => $codigoSucursal,
+            'nit' => (int) SiatConfig::get('siat_nit'),
         ];
 
         if (SiatConfig::esSimulador()) {
@@ -87,23 +117,27 @@ class SiatService
                 throw new \RuntimeException('Falta el Token Delegado en la configuración SIAT.');
             }
             $client = $this->cliente('FacturacionCodigos');
-            $resp = $client->__soapCall('solicitudCuis', [[
+            $resp = $client->__soapCall('cuis', [[
                 'SolicitudCuis' => $params + ['apiKey' => 'TokenApi '.$token],
             ]]);
             $ok = (bool) ($resp->RespuestaCuis->transaccion ?? false);
             $res = [
                 'transaccion' => $ok,
                 'cuis' => $resp->RespuestaCuis->codigo ?? null,
-                'codigoDescripcion' => $resp->RespuestaCuis->mensajesList[0]->descripcion ?? '',
+                'codigoDescripcion' => self::primerMensaje($resp->RespuestaCuis),
             ];
             if ($ok && $res['cuis']) {
+                $vigencia = self::vigenciaReal(
+                    isset($resp->RespuestaCuis->fechaVigencia) ? (string) $resp->RespuestaCuis->fechaVigencia : null,
+                    now()->addYear()
+                );
                 if ($codigoSucursal === 0 && $codigoPuntoVenta === 0) {
                     Configuracion::set('siat_cuis', $res['cuis'], 'text');
                 }
                 if ($puntoVentaId && ($pv = PuntoVenta::find($puntoVentaId))) {
                     $pv->update([
                         'cuis' => $res['cuis'],
-                        'cuis_vigencia' => now()->addYear(),
+                        'cuis_vigencia' => $vigencia,
                     ]);
                 }
             }
@@ -123,14 +157,15 @@ class SiatService
         $cuis ??= ($puntoVentaId ? PuntoVenta::find($puntoVentaId)?->cuis : null)
             ?: (string) SiatConfig::get('siat_cuis');
 
+        // Orden según secuencia del XSD (solicitudCufd).
         $params = [
             'codigoAmbiente' => SiatConfig::codigoAmbienteSin(),
             'codigoModalidad' => SiatConfig::codigoModalidadSin(),
-            'codigoSistema' => (string) SiatConfig::get('siat_codigo_sistema'),
-            'nit' => (int) SiatConfig::get('siat_nit'),
-            'codigoSucursal' => $codigoSucursal,
             'codigoPuntoVenta' => $codigoPuntoVenta,
+            'codigoSistema' => (string) SiatConfig::get('siat_codigo_sistema'),
+            'codigoSucursal' => $codigoSucursal,
             'cuis' => (string) $cuis,
+            'nit' => (int) SiatConfig::get('siat_nit'),
         ];
 
         if (SiatConfig::esSimulador()) {
@@ -158,12 +193,15 @@ class SiatService
         }
 
         try {
+            if (str_starts_with((string) $cuis, 'SIM-')) {
+                throw new \RuntimeException('El CUIS es de simulador (SIM-). Solicita primero un CUIS real para este punto de venta.');
+            }
             $token = SiatConfig::secreto('siat_token');
             if (! $token || ! $cuis) {
                 throw new \RuntimeException('Faltan Token Delegado o CUIS vigente.');
             }
             $client = $this->cliente('FacturacionCodigos');
-            $resp = $client->__soapCall('solicitudCufd', [[
+            $resp = $client->__soapCall('cufd', [[
                 'SolicitudCufd' => $params + ['apiKey' => 'TokenApi '.$token],
             ]]);
             $ok = (bool) ($resp->RespuestaCufd->transaccion ?? false);
@@ -172,18 +210,22 @@ class SiatService
                 'cufd' => $resp->RespuestaCufd->codigo ?? null,
                 'codigoControl' => $resp->RespuestaCufd->codigoControl ?? null,
                 'fechaVigencia' => $resp->RespuestaCufd->fechaVigencia ?? null,
-                'codigoDescripcion' => $resp->RespuestaCufd->mensajesList[0]->descripcion ?? '',
+                'codigoDescripcion' => self::primerMensaje($resp->RespuestaCufd),
             ];
             if ($ok && $res['cufd']) {
+                $vigencia = self::vigenciaReal(
+                    $res['fechaVigencia'] ? (string) $res['fechaVigencia'] : null,
+                    now()->addDay()
+                );
                 if ($codigoSucursal === 0 && $codigoPuntoVenta === 0) {
                     Configuracion::set('siat_cufd', $res['cufd'], 'text');
-                    Configuracion::set('siat_cufd_vigencia', (string) $res['fechaVigencia'], 'text');
+                    Configuracion::set('siat_cufd_vigencia', $vigencia->format('Y-m-d\TH:i:s.v'), 'text');
                 }
                 if ($puntoVentaId && ($pv = PuntoVenta::find($puntoVentaId))) {
                     $pv->update([
                         'cufd' => $res['cufd'],
                         'codigo_control' => $res['codigoControl'] ?? null,
-                        'cufd_vigencia' => $res['fechaVigencia'] ?? now()->addDay(),
+                        'cufd_vigencia' => $vigencia,
                     ]);
                 }
             }
@@ -430,7 +472,7 @@ class SiatService
             $res = [
                 'transaccion' => $ok,
                 'codigoRecepcion' => $r->codigoRecepcion ?? null,
-                'codigoDescripcion' => $r->mensajesList[0]->descripcion ?? '',
+                'codigoDescripcion' => self::primerMensaje($r),
                 'raw' => json_encode($resp, JSON_PARTIAL_OUTPUT_ON_ERROR),
             ];
             $this->auditar('recepcionFactura', ['cuf' => $cuf, 'hash' => $hash], $res, $ok);
@@ -479,7 +521,7 @@ class SiatService
             $ok = (bool) ($r->transaccion ?? false);
             $res = [
                 'transaccion' => $ok,
-                'codigoDescripcion' => $r->mensajesList[0]->descripcion ?? '',
+                'codigoDescripcion' => self::primerMensaje($r),
                 'raw' => json_encode($resp, JSON_PARTIAL_OUTPUT_ON_ERROR),
             ];
             $this->auditar('anulacionFactura', ['cuf' => $cuf], $res, $ok);
@@ -495,7 +537,9 @@ class SiatService
 
     /**
      * Registra una nota de débito o crédito asociada a una factura.
-     * En modo real usa el servicio de notas del SIN; en simulador, respuesta local.
+     * En modo real el SIN recibe las notas por recepcionFactura con
+     * documento sector 24 (XML propio): aún no implementado, se bloquea
+     * con mensaje claro en vez de llamar a una operación inexistente.
      */
     public function recepcionNota(string $cufOrigen, string $tipo, float $monto, string $motivo): array
     {
@@ -522,27 +566,9 @@ class SiatService
             return $res;
         }
 
-        try {
-            $token = SiatConfig::secreto('siat_token');
-            $client = $this->cliente(SiatConfig::servicioFacturacionWsdl());
-            $resp = $client->__soapCall('recepcionNotaFiscal', [[
-                'SolicitudServicioRecepcionNota' => $params + ['apiKey' => 'TokenApi '.$token],
-            ]]);
-            $r = $resp->RespuestaServicioFacturacion ?? null;
-            $ok = (bool) ($r->transaccion ?? false);
-            $res = [
-                'transaccion' => $ok,
-                'codigoRecepcion' => $r->codigoRecepcion ?? null,
-                'codigoDescripcion' => $r->mensajesList[0]->descripcion ?? '',
-                'raw' => json_encode($resp, JSON_PARTIAL_OUTPUT_ON_ERROR),
-            ];
-            $this->auditar('recepcionNota', ['cufOrigen' => $cufOrigen, 'tipo' => $tipo], $res, $ok);
-
-            return $res;
-        } catch (Throwable $e) {
-            $this->auditar('recepcionNota', ['cufOrigen' => $cufOrigen, 'tipo' => $tipo], $e->getMessage(), false);
-            throw $e;
-        }
+        throw new \RuntimeException(
+            'Notas de débito/crédito en modo real aún no soportadas: el SIN las recibe por recepcionFactura con documento sector 24.'
+        );
     }
 
     // ---------------- Catálogos de sincronización ----------------
@@ -551,7 +577,7 @@ class SiatService
      * Lista oficial de leyendas del periodo (FacturacionSincronizacion).
      * En simulador devuelve una lista de ejemplo.
      */
-    public function sincronizarLeyendas(): array
+    public function sincronizarLeyendas(int $codigoSucursal = 0, int $codigoPuntoVenta = 0): array
     {
         if (SiatConfig::esSimulador()) {
             $res = [
@@ -570,20 +596,30 @@ class SiatService
 
         try {
             $token = SiatConfig::secreto('siat_token');
+            $cuis = (string) (SiatConfig::get('siat_cuis') ?: '');
+            if (! $token || ! $cuis) {
+                throw new \RuntimeException('Faltan Token Delegado o CUIS vigente.');
+            }
             $client = $this->cliente('FacturacionSincronizacion');
-            $resp = $client->__soapCall('sincronizarParametricaLeyendas', [[
+            $resp = $client->__soapCall('sincronizarListaLeyendasFactura', [[
                 'SolicitudSincronizacion' => [
                     'codigoAmbiente' => SiatConfig::codigoAmbienteSin(),
+                    'codigoPuntoVenta' => $codigoPuntoVenta,
                     'codigoSistema' => (string) SiatConfig::get('siat_codigo_sistema'),
+                    'codigoSucursal' => $codigoSucursal,
+                    'cuis' => $cuis,
                     'nit' => (int) SiatConfig::get('siat_nit'),
                     'apiKey' => 'TokenApi '.$token,
                 ],
             ]]);
-            $lista = $resp->RespuestaListaParametricas->listaCodigos ?? [];
+            $nodo = $resp->RespuestaListaLeyendasFactura ?? null;
+            if (! $nodo && isset($resp->sincronizarListaLeyendasFacturaResponse)) {
+                $nodo = $resp->sincronizarListaLeyendasFacturaResponse->RespuestaListaLeyendasFactura ?? null;
+            }
             $leyendas = [];
-            foreach ((array) $lista as $item) {
-                if (! empty($item->descripcion)) {
-                    $leyendas[] = (string) $item->descripcion;
+            foreach ((array) ($nodo ? ($nodo->listaLeyendas ?? []) : []) as $item) {
+                if (! empty($item->descripcionLeyenda)) {
+                    $leyendas[] = (string) $item->descripcionLeyenda;
                 }
             }
             $res = ['transaccion' => true, 'leyendas' => $leyendas];
@@ -826,7 +862,7 @@ class SiatService
             $res = [
                 'transaccion' => $ok,
                 'codigoRecepcionEvento' => $r->codigoRecepcionEvento ?? null,
-                'codigoDescripcion' => $r->mensajesList[0]->descripcion ?? '',
+                'codigoDescripcion' => self::primerMensaje($r),
                 'raw' => json_encode($resp, JSON_PARTIAL_OUTPUT_ON_ERROR),
             ];
             $this->auditar('registroEventoSignificativo', ['codigoEvento' => $codigoEvento, 'fase' => $fase], $res, $ok);
@@ -880,7 +916,7 @@ class SiatService
             $res = [
                 'transaccion' => $ok,
                 'codigoRecepcion' => $r->codigoRecepcion ?? null,
-                'codigoDescripcion' => $r->mensajesList[0]->descripcion ?? '',
+                'codigoDescripcion' => self::primerMensaje($r),
                 'raw' => json_encode($resp, JSON_PARTIAL_OUTPUT_ON_ERROR),
             ];
             $this->auditar('recepcionPaqueteFactura', ['cantidad' => $cantidadFacturas, 'hash' => $hash], $res, $ok);
@@ -922,7 +958,7 @@ class SiatService
             $ok = (bool) ($r->transaccion ?? false);
             $res = [
                 'transaccion' => $ok,
-                'codigoDescripcion' => $r->mensajesList[0]->descripcion ?? '',
+                'codigoDescripcion' => self::primerMensaje($r),
                 'raw' => json_encode($resp, JSON_PARTIAL_OUTPUT_ON_ERROR),
             ];
             $this->auditar('validacionRecepcionPaquete', ['codigoRecepcion' => $codigoRecepcion], $res, $ok);
@@ -964,7 +1000,7 @@ class SiatService
             $ok = (bool) ($r->transaccion ?? false);
             $res = [
                 'transaccion' => $ok,
-                'codigoDescripcion' => $r->mensajesList[0]->descripcion ?? '',
+                'codigoDescripcion' => self::primerMensaje($r),
                 'raw' => json_encode($resp, JSON_PARTIAL_OUTPUT_ON_ERROR),
             ];
             $this->auditar('reversionAnulacionFactura', ['cuf' => $cuf], $res, $ok);
