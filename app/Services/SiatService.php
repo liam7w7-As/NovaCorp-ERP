@@ -42,6 +42,17 @@ class SiatService
         ]);
     }
 
+    /**
+     * Cliente SOAP con apiKey en el HEADER (el SIN ignora apiKey en el cuerpo).
+     */
+    protected function clienteAutenticado(string $servicio, string $token): SoapClient
+    {
+        $client = $this->cliente($servicio);
+        $client->__setSoapHeaders(new \SoapHeader('https://siat.impuestos.gob.bo/', 'apiKey', 'TokenApi '.$token));
+
+        return $client;
+    }
+
     protected function auditar(string $metodo, $parametros, $respuesta, bool $exitoso): void
     {
         try {
@@ -116,9 +127,9 @@ class SiatService
             if (! $token) {
                 throw new \RuntimeException('Falta el Token Delegado en la configuración SIAT.');
             }
-            $client = $this->cliente('FacturacionCodigos');
+            $client = $this->clienteAutenticado('FacturacionCodigos', $token);
             $resp = $client->__soapCall('cuis', [[
-                'SolicitudCuis' => $params + ['apiKey' => 'TokenApi '.$token],
+                'SolicitudCuis' => $params,
             ]]);
             $ok = (bool) ($resp->RespuestaCuis->transaccion ?? false);
             $res = [
@@ -200,9 +211,9 @@ class SiatService
             if (! $token || ! $cuis) {
                 throw new \RuntimeException('Faltan Token Delegado o CUIS vigente.');
             }
-            $client = $this->cliente('FacturacionCodigos');
+            $client = $this->clienteAutenticado('FacturacionCodigos', $token);
             $resp = $client->__soapCall('cufd', [[
-                'SolicitudCufd' => $params + ['apiKey' => 'TokenApi '.$token],
+                'SolicitudCufd' => $params,
             ]]);
             $ok = (bool) ($resp->RespuestaCufd->transaccion ?? false);
             $res = [
@@ -463,9 +474,9 @@ class SiatService
 
         try {
             $token = SiatConfig::secreto('siat_token');
-            $client = $this->cliente(SiatConfig::servicioFacturacionWsdl());
+            $client = $this->clienteAutenticado(SiatConfig::servicioFacturacionWsdl(), (string) $token);
             $resp = $client->__soapCall('recepcionFactura', [[
-                'SolicitudServicioRecepcionFactura' => $params + ['apiKey' => 'TokenApi '.$token],
+                'SolicitudServicioRecepcionFactura' => $params,
             ]]);
             $r = $resp->RespuestaServicioFacturacion ?? null;
             $ok = (bool) ($r->transaccion ?? false);
@@ -513,9 +524,9 @@ class SiatService
 
         try {
             $token = SiatConfig::secreto('siat_token');
-            $client = $this->cliente(SiatConfig::servicioFacturacionWsdl());
+            $client = $this->clienteAutenticado(SiatConfig::servicioFacturacionWsdl(), (string) $token);
             $resp = $client->__soapCall('anulacionFactura', [[
-                'SolicitudServicioAnulacionFactura' => $params + ['apiKey' => 'TokenApi '.$token],
+                'SolicitudServicioAnulacionFactura' => $params,
             ]]);
             $r = $resp->RespuestaServicioFacturacion ?? null;
             $ok = (bool) ($r->transaccion ?? false);
@@ -600,7 +611,7 @@ class SiatService
             if (! $token || ! $cuis) {
                 throw new \RuntimeException('Faltan Token Delegado o CUIS vigente.');
             }
-            $client = $this->cliente('FacturacionSincronizacion');
+            $client = $this->clienteAutenticado('FacturacionSincronizacion', $token);
             $resp = $client->__soapCall('sincronizarListaLeyendasFactura', [[
                 'SolicitudSincronizacion' => [
                     'codigoAmbiente' => SiatConfig::codigoAmbienteSin(),
@@ -609,7 +620,6 @@ class SiatService
                     'codigoSucursal' => $codigoSucursal,
                     'cuis' => $cuis,
                     'nit' => (int) SiatConfig::get('siat_nit'),
-                    'apiKey' => 'TokenApi '.$token,
                 ],
             ]]);
             $nodo = $resp->RespuestaListaLeyendasFactura ?? null;
@@ -664,16 +674,15 @@ class SiatService
         try {
             $token = SiatConfig::secreto('siat_token');
             $cuis = (string) (SiatConfig::get('siat_cuis') ?: '');
-            $client = $this->cliente('FacturacionSincronizacion');
+            $client = $this->clienteAutenticado('FacturacionSincronizacion', (string) $token);
 
             $solicitud = [
                 'codigoAmbiente' => SiatConfig::codigoAmbienteSin(),
-                'codigoSistema' => (string) SiatConfig::get('siat_codigo_sistema'),
-                'nit' => (int) SiatConfig::get('siat_nit'),
-                'codigoSucursal' => $codigoSucursal,
                 'codigoPuntoVenta' => $codigoPuntoVenta,
+                'codigoSistema' => (string) SiatConfig::get('siat_codigo_sistema'),
+                'codigoSucursal' => $codigoSucursal,
                 'cuis' => $cuis,
-                'apiKey' => 'TokenApi '.$token,
+                'nit' => (int) SiatConfig::get('siat_nit'),
             ];
 
             $resp = $client->__soapCall($metodos[$tipo], [[
@@ -853,9 +862,9 @@ class SiatService
 
         try {
             $token = SiatConfig::secreto('siat_token');
-            $client = $this->cliente('FacturacionOperaciones');
+            $client = $this->clienteAutenticado('FacturacionOperaciones', (string) $token);
             $resp = $client->__soapCall('registroEventoSignificativo', [[
-                'SolicitudEventoSignificativo' => $params + ['apiKey' => 'TokenApi '.$token],
+                'SolicitudEventoSignificativo' => $params,
             ]]);
             $r = $resp->RespuestaListaEventos ?? $resp;
             $ok = (bool) ($r->transaccion ?? false);
@@ -904,10 +913,9 @@ class SiatService
 
         try {
             $token = SiatConfig::secreto('siat_token');
-            $client = $this->cliente(SiatConfig::servicioFacturacionWsdl());
+            $client = $this->clienteAutenticado(SiatConfig::servicioFacturacionWsdl(), (string) $token);
             $resp = $client->__soapCall('recepcionPaqueteFactura', [[
                 'SolicitudServicioRecepcionPaquete' => $params + [
-                    'apiKey' => 'TokenApi '.$token,
                     'archivo' => base64_encode($tarGzBinario),
                 ],
             ]]);
@@ -944,14 +952,13 @@ class SiatService
 
         try {
             $token = SiatConfig::secreto('siat_token');
-            $client = $this->cliente(SiatConfig::servicioFacturacionWsdl());
+            $client = $this->clienteAutenticado(SiatConfig::servicioFacturacionWsdl(), (string) $token);
             $resp = $client->__soapCall('validacionRecepcionPaqueteFactura', [[
                 'SolicitudServicioValidacionPaquete' => [
                     'codigoAmbiente' => SiatConfig::codigoAmbienteSin(),
                     'codigoSistema' => (string) SiatConfig::get('siat_codigo_sistema'),
                     'nit' => (int) SiatConfig::get('siat_nit'),
                     'codigoRecepcion' => $codigoRecepcion,
-                    'apiKey' => 'TokenApi '.$token,
                 ],
             ]]);
             $r = $resp->RespuestaServicioFacturacion ?? null;
@@ -992,9 +999,9 @@ class SiatService
 
         try {
             $token = SiatConfig::secreto('siat_token');
-            $client = $this->cliente(SiatConfig::servicioFacturacionWsdl());
+            $client = $this->clienteAutenticado(SiatConfig::servicioFacturacionWsdl(), (string) $token);
             $resp = $client->__soapCall('reversionAnulacionFactura', [[
-                'SolicitudServicioReversionAnulacion' => $params + ['apiKey' => 'TokenApi '.$token],
+                'SolicitudServicioReversionAnulacion' => $params,
             ]]);
             $r = $resp->RespuestaServicioFacturacion ?? null;
             $ok = (bool) ($r->transaccion ?? false);
