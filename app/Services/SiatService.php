@@ -43,11 +43,22 @@ class SiatService
     }
 
     /**
-     * Cliente SOAP con apiKey en el HEADER (el SIN ignora apiKey en el cuerpo).
+     * Cliente SOAP autenticado: el SIN exige el token en la CABECERA HTTP
+     * (`Apikey: TokenApi ...`), no solo en el XML. Se envía en ambas
+     * (la del XML es ignorada por el SIN pero inofensiva).
      */
     protected function clienteAutenticado(string $servicio, string $token): SoapClient
     {
-        $client = $this->cliente($servicio);
+        $contexto = stream_context_create([
+            'http' => ['header' => 'Apikey: TokenApi '.$token."\r\n"],
+        ]);
+        $client = new SoapClient($this->baseUrl().'/'.$servicio.'?wsdl', [
+            'trace' => true,
+            'exceptions' => true,
+            'connection_timeout' => 25,
+            'cache_wsdl' => WSDL_CACHE_NONE,
+            'stream_context' => $contexto,
+        ]);
         $client->__setSoapHeaders(new \SoapHeader('https://siat.impuestos.gob.bo/', 'apiKey', 'TokenApi '.$token));
 
         return $client;
