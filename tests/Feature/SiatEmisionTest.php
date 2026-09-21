@@ -71,6 +71,7 @@ class SiatEmisionTest extends TestCase
             'tipo_punto_venta' => 'Fijo', 'codigo' => 0,
             'cuis' => 'CUIS-TEST', 'cuis_vigencia' => now()->addMonths(6),
             'cufd' => 'CUFD-TEST', 'cufd_vigencia' => now()->addDay(),
+            'codigo_control' => 'CTRL-TEST-123',
             'activo' => true,
         ]);
         $cliente = Cliente::create(['nombre' => 'CLIENTE TEST SA', 'nit' => '1020304050']);
@@ -106,6 +107,7 @@ class SiatEmisionTest extends TestCase
         $this->assertStringContainsString('<facturaComputarizadaCompraVenta>', $factura->xml_firmado);
         $this->assertStringNotContainsString('<Signature', $factura->xml_firmado);
         $this->assertStringNotContainsString('<firmaDigital>', $factura->xml_firmado);
+        $this->assertStringContainsString('<codigoControl>CTRL-TEST-123</codigoControl>', $factura->xml_firmado);
     }
 
     public function test_emision_electronica_simulador_incluye_marcador_firma(): void
@@ -117,6 +119,7 @@ class SiatEmisionTest extends TestCase
         $this->assertSame('emitida', $factura->estado);
         $this->assertStringContainsString('<facturaElectronicaCompraVenta>', $factura->xml_firmado);
         $this->assertStringContainsString('<firmaDigital>', $factura->xml_firmado);
+        $this->assertStringNotContainsString('<codigoControl>', $factura->xml_firmado);
     }
 
     // ------------------------------------------------------------ Vigencia CUFD

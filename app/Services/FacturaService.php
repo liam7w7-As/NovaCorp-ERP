@@ -116,7 +116,7 @@ class FacturaService
             (string) $codigoPuntoVenta,
         );
 
-        $xml = $this->construirXml($venta, $numeroFactura, $cuf, $fechaEmision, $nitCliente, $cafc, $sucursal, $puntoVenta, $cufdActual);
+        $xml = $this->construirXml($venta, $numeroFactura, $cuf, $fechaEmision, $nitCliente, $cafc, $sucursal, $puntoVenta, $cufdActual, $puntoVenta->codigo_control);
 
         try {
             $firmado = $this->siat->firmarXml($xml);
@@ -344,6 +344,7 @@ class FacturaService
         ?Sucursal $sucursal = null,
         ?PuntoVenta $puntoVenta = null,
         ?string $cufd = null,
+        ?string $codigoControl = null,
     ): string {
         $e = fn ($v) => htmlspecialchars((string) ($v ?? ''), ENT_XML1, 'UTF-8');
         $nitEmisor = $e(SiatConfig::get('siat_nit', '0'));
@@ -407,6 +408,8 @@ class FacturaService
             ."<cuf>{$e($cuf)}</cuf>"
             ."<cufd>{$cufdValor}</cufd>"
             .($cafc ? "<cafc>{$e($cafc)}</cafc>" : '')
+            // Computarizada exige el código de control del CUFD en el XML.
+            .($codigoControl && SiatConfig::esComputarizada() ? "<codigoControl>{$e($codigoControl)}</codigoControl>" : '')
             ."<codigoSucursal>{$codigoSucursal}</codigoSucursal>"
             ."<direccion>{$direccion}</direccion>"
             ."<codigoPuntoVenta>{$codigoPuntoVenta}</codigoPuntoVenta>"
