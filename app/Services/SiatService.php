@@ -91,6 +91,28 @@ class SiatService
         return $respaldo;
     }
 
+    /**
+     * Mensaje de error enriquecido con el XML SOAP enviado (token recortado),
+     * para diagnosticar rechazos del SIN sin acceso al servidor.
+     */
+    protected function errorSoap($client, Throwable $e): string
+    {
+        $detalle = $e->getMessage();
+        try {
+            if ($client instanceof SoapClient) {
+                $req = $client->__getLastRequest();
+                if ($req) {
+                    $req = preg_replace('/(TokenApi\s+)([A-Za-z0-9\-_]{6})[A-Za-z0-9\-_\.]+/', '$1$2***', $req);
+                    $detalle .= ' | REQUEST: '.mb_substr((string) $req, 0, 2000);
+                }
+            }
+        } catch (Throwable) {
+            // el diagnóstico nunca debe romper el flujo
+        }
+
+        return $detalle;
+    }
+
     // ---------------- CUIS ----------------
 
     public function solicitarCuis(int $codigoSucursal = 0, int $codigoPuntoVenta = 0, ?int $puntoVentaId = null): array
@@ -156,7 +178,7 @@ class SiatService
 
             return $res;
         } catch (Throwable $e) {
-            $this->auditar('solicitudCuis', $params, $e->getMessage(), false);
+            $this->auditar('solicitudCuis', $params, $this->errorSoap($client ?? null, $e), false);
             throw $e;
         }
     }
@@ -244,7 +266,7 @@ class SiatService
 
             return $res;
         } catch (Throwable $e) {
-            $this->auditar('solicitudCufd', $params, $e->getMessage(), false);
+            $this->auditar('solicitudCufd', $params, $this->errorSoap($client ?? null, $e), false);
             throw $e;
         }
     }
@@ -490,7 +512,7 @@ class SiatService
 
             return $res;
         } catch (Throwable $e) {
-            $this->auditar('recepcionFactura', ['cuf' => $cuf, 'hash' => $hash], $e->getMessage(), false);
+            $this->auditar('recepcionFactura', ['cuf' => $cuf, 'hash' => $hash], $this->errorSoap($client ?? null, $e), false);
             throw $e;
         }
     }
@@ -539,7 +561,7 @@ class SiatService
 
             return $res;
         } catch (Throwable $e) {
-            $this->auditar('anulacionFactura', ['cuf' => $cuf], $e->getMessage(), false);
+            $this->auditar('anulacionFactura', ['cuf' => $cuf], $this->errorSoap($client ?? null, $e), false);
             throw $e;
         }
     }
@@ -637,7 +659,7 @@ class SiatService
 
             return $res;
         } catch (Throwable $e) {
-            $this->auditar('sincronizarLeyendas', [], $e->getMessage(), false);
+            $this->auditar('sincronizarLeyendas', [], $this->errorSoap($client ?? null, $e), false);
             throw $e;
         }
     }
@@ -725,7 +747,7 @@ class SiatService
 
             return ['transaccion' => true, 'items' => $items];
         } catch (Throwable $e) {
-            $this->auditar('sincronizarCatalogo', ['tipo' => $tipo], $e->getMessage(), false);
+            $this->auditar('sincronizarCatalogo', ['tipo' => $tipo], $this->errorSoap($client ?? null, $e), false);
             throw $e;
         }
     }
@@ -878,7 +900,7 @@ class SiatService
 
             return $res;
         } catch (Throwable $e) {
-            $this->auditar('registroEventoSignificativo', ['codigoEvento' => $codigoEvento, 'fase' => $fase], $e->getMessage(), false);
+            $this->auditar('registroEventoSignificativo', ['codigoEvento' => $codigoEvento, 'fase' => $fase], $this->errorSoap($client ?? null, $e), false);
             throw $e;
         }
     }
@@ -931,7 +953,7 @@ class SiatService
 
             return $res;
         } catch (Throwable $e) {
-            $this->auditar('recepcionPaqueteFactura', ['cantidad' => $cantidadFacturas, 'hash' => $hash], $e->getMessage(), false);
+            $this->auditar('recepcionPaqueteFactura', ['cantidad' => $cantidadFacturas, 'hash' => $hash], $this->errorSoap($client ?? null, $e), false);
             throw $e;
         }
     }
@@ -972,7 +994,7 @@ class SiatService
 
             return $res;
         } catch (Throwable $e) {
-            $this->auditar('validacionRecepcionPaquete', ['codigoRecepcion' => $codigoRecepcion], $e->getMessage(), false);
+            $this->auditar('validacionRecepcionPaquete', ['codigoRecepcion' => $codigoRecepcion], $this->errorSoap($client ?? null, $e), false);
             throw $e;
         }
     }
@@ -1014,7 +1036,7 @@ class SiatService
 
             return $res;
         } catch (Throwable $e) {
-            $this->auditar('reversionAnulacionFactura', ['cuf' => $cuf], $e->getMessage(), false);
+            $this->auditar('reversionAnulacionFactura', ['cuf' => $cuf], $this->errorSoap($client ?? null, $e), false);
             throw $e;
         }
     }
