@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Traits\Auditable;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Facades\Storage;
@@ -20,7 +21,12 @@ class Producto extends Model
         'descripcion',
         'unidad',
         'codigo_sin',
+        'actividad_economica_sin',
         'unidad_sin',
+        'homologacion_estado',
+        'homologacion_confianza',
+        'homologado_at',
+        'homologado_por',
         'costo',
         'precio',
         'stock',
@@ -46,6 +52,8 @@ class Producto extends Model
         'stock_reservado' => 'decimal:2',
         'stock_min' => 'decimal:2',
         'imagenes' => 'array',
+        'homologacion_confianza' => 'integer',
+        'homologado_at' => 'datetime',
     ];
 
     /**
@@ -140,5 +148,10 @@ class Producto extends Model
     public function detalleNotaEntregas(): HasMany
     {
         return $this->hasMany(DetalleNotaEntrega::class);
+    }
+
+    public function homologadoPor(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'homologado_por');
     }
 }

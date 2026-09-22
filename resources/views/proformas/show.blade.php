@@ -75,11 +75,11 @@
   </div>
 
   <table class="tabla-giseca" style="margin-bottom:14px;">
-    <thead><tr><th>N°</th><th>Código</th><th>Descripción</th><th>Marca</th><th>Unidad</th>
+    <thead><tr><th>N°</th><th>Cód. Interno</th><th>Código</th><th>Descripción</th><th>Marca</th><th>Unidad</th>
                <th class="text-end">Cant.</th><th class="text-end">P.Unit.</th><th class="text-end">Total</th></tr></thead>
     <tbody>
       @foreach($proforma->detalles as $i => $it)
-        <tr><td>{{ $i + 1 }}</td><td><span class="codigo-chip">{{ $it->codigo_producto }}</span></td>
+        <tr><td>{{ $i + 1 }}</td><td><span class="codigo-chip">{{ $it->codigo_interno ?? $it->producto?->codigo_interno ?? '—' }}</span></td><td><span class="codigo-chip">{{ $it->codigo_producto }}</span></td>
             <td>{{ $it->descripcion_producto }}</td><td>{{ $it->producto->marca ?? '' }}</td><td>{{ $it->producto->unidad ?? 'PZA' }}</td>
             <td class="text-end">{{ $it->cantidad }}</td><td class="text-end">{{ formatoMoneda($it->precio_unitario) }}</td>
             <td class="text-end">{{ formatoMoneda($it->subtotal) }}</td></tr>

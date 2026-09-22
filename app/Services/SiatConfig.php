@@ -15,6 +15,7 @@ class SiatConfig
         'siat_modo' => 'simulador', // simulador | real
         'siat_ambiente' => 'pruebas', // pruebas | produccion
         'siat_modalidad' => 'computarizada', // computarizada | electronica
+        'siat_actividad_economica' => '',
         'siat_sucursal' => '0',
         'siat_punto_venta' => '0',
     ];
@@ -45,7 +46,7 @@ class SiatConfig
     {
         foreach (['siat_nit', 'siat_razon_social', 'siat_modo', 'siat_ambiente', 'siat_modalidad',
             'siat_codigo_sistema', 'siat_sucursal', 'siat_punto_venta', 'siat_telefono',
-            'siat_direccion', 'siat_ciudad', 'siat_cafc', 'siat_leyenda'] as $k) {
+            'siat_direccion', 'siat_ciudad', 'siat_actividad_economica', 'siat_cafc', 'siat_leyenda'] as $k) {
             if (array_key_exists($k, $datos)) {
                 Configuracion::set($k, $datos[$k], 'text');
             }
@@ -84,15 +85,12 @@ class SiatConfig
     }
 
     /**
-     * Nombre del servicio SOAP de emisión según modalidad activa.
-     * - Computarizada: ServicioFacturacionComputarizada
-     * - Electrónica:   ServicioFacturacionCompraVenta
+     * Servicio SOAP publicado para el documento sector Compra-Venta.
+     * Admite modalidad electrónica (1) y computarizada (2).
      */
     public static function servicioFacturacionWsdl(): string
     {
-        return self::esComputarizada()
-            ? 'ServicioFacturacionComputarizada'
-            : 'ServicioFacturacionCompraVenta';
+        return 'ServicioFacturacionCompraVenta';
     }
 
     public static function todo(): array
@@ -103,6 +101,7 @@ class SiatConfig
             'modalidad' => self::get('siat_modalidad'),
             'nit' => self::get('siat_nit'),
             'razon_social' => self::get('siat_razon_social'),
+            'actividad_economica' => self::get('siat_actividad_economica'),
             'codigo_sistema' => self::get('siat_codigo_sistema'),
             'sucursal' => self::get('siat_sucursal'),
             'punto_venta' => self::get('siat_punto_venta'),

@@ -10,5 +10,5 @@ Artisan::command('inspire', function () {
 
 Schedule::command('backup:database')->dailyAt('02:00');
 
-// El CUFD vence cada 24h: renovarlo de madrugada evita cortes al facturar.
-Schedule::command('siat:renovar-cufd')->dailyAt('00:05');
+// Revisa con frecuencia y renueva solo los CUFD que vencen en una hora o menos.
+Schedule::command('siat:renovar-cufd')->everyTenMinutes()->withoutOverlapping(15);

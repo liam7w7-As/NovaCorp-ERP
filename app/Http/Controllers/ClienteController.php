@@ -45,6 +45,7 @@ class ClienteController extends Controller
                     $fail(NitHelper::mensajeFormato());
                 }
             }],
+            'codigo_tipo_documento' => 'required|integer|between:1,5',
             'telefono' => 'nullable|string|max:50',
             'correo' => 'nullable|email|max:150',
             'contacto' => 'nullable|string|max:150',
@@ -104,6 +105,7 @@ class ClienteController extends Controller
             Cliente::create([
                 'nombre' => $nombre,
                 'nit' => $nit ?: null,
+                'codigo_tipo_documento' => $this->codigoTipoDocumentoCsv($f, $nit),
                 'telefono' => trim((string) ($f['Telefono'] ?? $f['telefono'] ?? '')) ?: null,
                 'correo' => trim((string) ($f['Correo'] ?? $f['correo'] ?? '')) ?: null,
                 'contacto' => trim((string) ($f['Contacto'] ?? $f['contacto'] ?? '')) ?: null,
@@ -134,5 +136,18 @@ class ClienteController extends Controller
             ->get(['id', 'nombre', 'nit']);
 
         return response()->json($lista);
+    }
+
+    protected function codigoTipoDocumentoCsv(array $fila, string $numeroDocumento): int
+    {
+        $tipo = mb_strtoupper(trim((string) ($fila['TipoDocumento'] ?? $fila['tipo_documento'] ?? '')));
+
+        return match ($tipo) {
+            'CI' => 1,
+            'CEX' => 2,
+            'PAS', 'PASAPORTE' => 3,
+            'OD', 'OTRO' => 4,
+            default => $numeroDocumento !== '' ? 5 : 1,
+        };
     }
 }

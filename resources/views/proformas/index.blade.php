@@ -43,7 +43,7 @@
             <a href="{{ route('proformas.show', $p) }}" class="btn-giseca btn-outline btn-icon btn-sm" title="Ver"><i class="bi bi-eye"></i></a>
             @if(!$p->esta_convertida)
               <a href="{{ route('proformas.edit', $p) }}" class="btn-giseca btn-outline btn-icon btn-sm" title="Editar"><i class="bi bi-pencil"></i></a>
-              @can('admin')<form method="POST" action="{{ route('proformas.destroy', $p) }}" style="display:inline;" onsubmit="return confirm('¿Eliminar la proforma {{ $p->numero }}?')">@csrf @method('DELETE')<button type="submit" class="btn-giseca btn-outline btn-icon btn-sm" title="Eliminar"><i class="bi bi-trash" style="color:var(--gc-rojo);"></i></button></form>@endcan
+              @can('admin')<form method="POST" action="{{ route('proformas.destroy', $p) }}" style="display:inline;" data-confirm="¿Eliminar la proforma {{ $p->numero }}?" data-confirm-title="Eliminar proforma" data-confirm-label="Eliminar" data-confirm-variant="peligro">@csrf @method('DELETE')<button type="submit" class="btn-giseca btn-outline btn-icon btn-sm" title="Eliminar"><i class="bi bi-trash" style="color:var(--gc-rojo);"></i></button></form>@endcan
             @endif
           </td>
         </tr>

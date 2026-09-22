@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Configuracion;
 use App\Models\EventoSiat;
 use App\Models\PuntoVenta;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Storage;
 use SoapClient;
 use Throwable;
@@ -315,6 +316,7 @@ class SiatService
         int $docSector, // 1 factura compra-venta
         string $numeroFactura,
         string $puntoVenta,
+        string $codigoControl = '',
     ): string {
         if (SiatConfig::esSimulador()) {
             $semilla = implode('|', func_get_args());
@@ -323,6 +325,11 @@ class SiatService
             $this->auditar('generarCuf', ['_modo' => 'simulador'] + compact('nit', 'numeroFactura'), ['cuf' => $cuf], true);
 
             return $cuf;
+        }
+
+        $codigoControl = trim($codigoControl);
+        if ($codigoControl === '') {
+            throw new \RuntimeException('No existe código de control del CUFD para generar el CUF.');
         }
 
         $cadena = str_pad($nit, 13, '0', STR_PAD_LEFT)
@@ -336,7 +343,7 @@ class SiatService
             .str_pad($puntoVenta, 4, '0', STR_PAD_LEFT);
 
         $digito = self::modulo11($cadena);
-        $cuf = self::decimalAHex($cadena.$digito);
+        $cuf = self::decimalAHex($cadena.$digito).strtoupper($codigoControl);
         $this->auditar('generarCuf', compact('nit', 'numeroFactura'), ['cuf' => $cuf], true);
 
         return $cuf;
@@ -351,14 +358,8 @@ class SiatService
             $factor = $factor === 9 ? 2 : $factor + 1;
         }
         $resto = $suma % 11;
-        if ($resto === 0) {
-            return 0;
-        }
-        if ($resto === 1) {
-            return 1; // criterio SIN para este caso
-        }
 
-        return 11 - $resto;
+        return $resto === 10 ? 1 : $resto;
     }
 
     public static function decimalAHex(string $decimal): string
@@ -480,13 +481,30 @@ class SiatService
     // ---------------- Recepción de factura ----------------
 
     /**
+     * @return array{archivo: string, hashArchivo: string}
+     */
+    protected function prepararArchivoRecepcion(string $xml): array
+    {
+        $archivoGzip = gzencode($xml);
+        if ($archivoGzip === false) {
+            throw new \RuntimeException('No se pudo comprimir el XML con gzip.');
+        }
+
+        return [
+            'archivo' => $archivoGzip,
+            'hashArchivo' => hash('sha256', $archivoGzip),
+        ];
+    }
+
+    /**
      * $contexto: identidad fiscal del punto de venta emisor
      * ['codigoSucursal', 'codigoPuntoVenta', 'cufd', 'cuis'].
      * Si se omite, usa los valores globales de SiatConfig (Casa Matriz).
      */
     public function recepcionFactura(string $xmlFirmado, string $cuf, string $numeroFactura, \DateTimeInterface $fechaEmision, int $emision = 1, ?string $cafc = null, array $contexto = []): array
     {
-        $hash = hash('sha256', $xmlFirmado);
+        $archivo = $this->prepararArchivoRecepcion($xmlFirmado);
+        $hash = $archivo['hashArchivo'];
         $params = [
             'codigoAmbiente' => SiatConfig::codigoAmbienteSin(),
             'codigoDocumentoSector' => 1,
@@ -499,11 +517,10 @@ class SiatService
             'cuis' => (string) ($contexto['cuis'] ?? SiatConfig::get('siat_cuis')),
             'nit' => (int) SiatConfig::get('siat_nit'),
             'tipoFacturaDocumento' => 1,
-            'archivo' => base64_encode(gzencode($xmlFirmado)),
+            // SoapClient serializa xs:base64Binary; se entregan bytes GZIP, no Base64 manual.
+            'archivo' => $archivo['archivo'],
             'fechaEnvio' => $fechaEmision->format('Y-m-d\TH:i:s.v'),
             'hashArchivo' => $hash,
-            'cafc' => $cafc,
-            'codigoControl' => null,
         ];
 
         if (SiatConfig::esSimulador()) {
@@ -536,7 +553,12 @@ class SiatService
                 'codigoDescripcion' => self::primerMensaje($r),
                 'raw' => json_encode($resp, JSON_PARTIAL_OUTPUT_ON_ERROR),
             ];
-            $this->auditar('recepcionFactura', ['cuf' => $cuf, 'hash' => $hash, 'solicitud' => \Illuminate\Support\Arr::except($params, ['archivo'])], $res, $ok);
+            $this->auditar('recepcionFactura', [
+                'cuf' => $cuf,
+                'hash' => $hash,
+                'archivo_bytes' => strlen($archivo['archivo']),
+                'solicitud' => Arr::except($params, ['archivo']),
+            ], $res, $ok);
 
             return $res;
         } catch (Throwable $e) {
@@ -701,7 +723,7 @@ class SiatService
     {
         if (SiatConfig::esSimulador()) {
             $items = self::catalogoEjemplo($tipo);
-            $res = ['transaccion' => true, 'items' => $items, 'simulado' => true];
+            $res = ['transaccion' => true, 'items' => $items, 'extras' => [], 'simulado' => true];
             $this->auditar('sincronizarCatalogo', ['_modo' => 'simulador', 'tipo' => $tipo], ['total' => count($items)], true);
 
             return $res;
@@ -740,6 +762,7 @@ class SiatService
             ]]);
 
             $items = [];
+            $extras = [];
             $respuesta = $resp->RespuestaListaParametricas
                 ?? $resp->RespuestaListaActividades
                 ?? $resp->RespuestaListaProductos
@@ -769,11 +792,20 @@ class SiatService
                 );
                 if ($codigo !== '' && $desc !== '') {
                     $items[$codigo] = $desc;
+                    $actividad = (string) (
+                        $item->codigoActividad
+                        ?? $item->actividadEconomica
+                        ?? $item->codigoCaeb
+                        ?? ''
+                    );
+                    if ($actividad !== '') {
+                        $extras[$codigo] = ['actividad_economica' => $actividad];
+                    }
                 }
             }
             $this->auditar('sincronizarCatalogo', ['tipo' => $tipo], ['total' => count($items)], true);
 
-            return ['transaccion' => true, 'items' => $items];
+            return ['transaccion' => true, 'items' => $items, 'extras' => $extras];
         } catch (Throwable $e) {
             $this->auditar('sincronizarCatalogo', ['tipo' => $tipo], $this->errorSoap($client ?? null, $e), false);
             throw $e;
@@ -966,7 +998,7 @@ class SiatService
             $client = $this->clienteAutenticado(SiatConfig::servicioFacturacionWsdl(), (string) $token);
             $resp = $client->__soapCall('recepcionPaqueteFactura', [[
                 'SolicitudServicioRecepcionPaquete' => $params + [
-                    'archivo' => base64_encode($tarGzBinario),
+                    'archivo' => $tarGzBinario,
                 ],
             ]]);
             $r = $resp->RespuestaServicioFacturacion ?? null;

@@ -53,7 +53,6 @@ class FacturaService
         if (! NitHelper::formatoValido($nitCliente)) {
             throw new InvalidArgumentException('NIT/CI del cliente inválido ('.NitHelper::mensajeFormato().')');
         }
-
         $usuarioId ??= Auth::id();
         $contingencia = ! empty($opciones['contingencia']);
         $cafc = $contingencia ? (string) SiatConfig::get('siat_cafc') : null;
@@ -67,22 +66,6 @@ class FacturaService
         $puntoVenta = $venta->puntoVenta ?? SucursalContext::puntoVenta();
         $codigoSucursal = (int) ($sucursal->codigo ?? 0);
         $codigoPuntoVenta = (int) ($puntoVenta->codigo ?? 0);
-
-        // Numeración por sucursal y punto de venta
-        $prefijo = ($codigoSucursal === 0 && $codigoPuntoVenta === 0)
-            ? 'FAC-'
-            : sprintf('FAC-S%d-P%d-', $codigoSucursal, $codigoPuntoVenta);
-
-        $numero = $this->contadores->siguienteUnico(
-            $prefijo,
-            fn ($n) => FacturaElectronica::where('numero_factura', $n)->exists()
-        );
-        $correlativoStr = substr($numero, strlen($prefijo));
-        // Mantener como cadena numérica (sin castear a int) para no perder
-        // ceros que el CUF exige en sus anchos fijos.
-        $numeroFactura = preg_replace('/\D/', '', $correlativoStr) ?: '1';
-        $fechaEmision = now();
-        $fechaHoraCuf = $fechaEmision->format('YmdHis').substr($fechaEmision->format('u'), 0, 3);
 
         $cufdActual = $emision === 2 ? null : ($puntoVenta->cufd ?: (string) SiatConfig::get('siat_cufd'));
 
@@ -103,6 +86,37 @@ class FacturaService
                 'El punto de venta no tiene CUFD vigente. Solicítalo en Sucursales antes de emitir.'
             );
         }
+        if (! SiatConfig::esSimulador() && trim((string) $puntoVenta->codigo_control) === '') {
+            throw new InvalidArgumentException('El CUFD no tiene código de control. Solicita un CUFD nuevo para este punto de venta.');
+        }
+
+        if (! SiatConfig::esSimulador()) {
+            $actividadEconomica = trim((string) SiatConfig::get('siat_actividad_economica'));
+            if ($actividadEconomica === '') {
+                throw new InvalidArgumentException('Configura la actividad económica autorizada por el SIN antes de emitir.');
+            }
+            foreach ($venta->detalles as $detalle) {
+                if (trim((string) $detalle->producto?->codigo_sin) === '') {
+                    throw new InvalidArgumentException('El producto '.$detalle->descripcion_producto.' no tiene código SIN homologado.');
+                }
+            }
+        }
+
+        // Numeración por sucursal y punto de venta
+        $prefijo = ($codigoSucursal === 0 && $codigoPuntoVenta === 0)
+            ? 'FAC-'
+            : sprintf('FAC-S%d-P%d-', $codigoSucursal, $codigoPuntoVenta);
+
+        $numero = $this->contadores->siguienteUnico(
+            $prefijo,
+            fn ($n) => FacturaElectronica::where('numero_factura', $n)->exists()
+        );
+        $correlativoStr = substr($numero, strlen($prefijo));
+        // Mantener como cadena numérica (sin castear a int) para no perder
+        // ceros que el CUF exige en sus anchos fijos.
+        $numeroFactura = preg_replace('/\D/', '', $correlativoStr) ?: '1';
+        $fechaEmision = now();
+        $fechaHoraCuf = $fechaEmision->format('YmdHis').substr($fechaEmision->format('u'), 0, 3);
 
         $cuf = $this->siat->generarCuf(
             (string) SiatConfig::get('siat_nit', '0'),
@@ -114,9 +128,10 @@ class FacturaService
             1,
             $numeroFactura,
             (string) $codigoPuntoVenta,
+            (string) $puntoVenta->codigo_control,
         );
 
-        $xml = $this->construirXml($venta, $numeroFactura, $cuf, $fechaEmision, $nitCliente, $cafc, $sucursal, $puntoVenta, $cufdActual, $puntoVenta->codigo_control);
+        $xml = $this->construirXml($venta, $numeroFactura, $cuf, $fechaEmision, $nitCliente, $cafc, $sucursal, $puntoVenta, $cufdActual);
 
         try {
             $firmado = $this->siat->firmarXml($xml);
@@ -344,7 +359,6 @@ class FacturaService
         ?Sucursal $sucursal = null,
         ?PuntoVenta $puntoVenta = null,
         ?string $cufd = null,
-        ?string $codigoControl = null,
     ): string {
         $e = fn ($v) => htmlspecialchars((string) ($v ?? ''), ENT_XML1, 'UTF-8');
         $nitEmisor = $e(SiatConfig::get('siat_nit', '0'));
@@ -373,9 +387,8 @@ class FacturaService
             }
         }
 
-        // Tipo de documento: 5 para NIT (>= 10 dígitos), 1 para CI
-        $digitos = NitHelper::soloDigitos($nitCliente);
-        $tipoDoc = strlen($digitos) >= 10 ? 5 : 1;
+        $tipoDoc = (int) ($venta->cliente?->codigo_tipo_documento ?? 5);
+        $actividadEconomica = trim((string) SiatConfig::get('siat_actividad_economica')) ?: '474100';
 
         $detalle = '';
         foreach ($venta->detalles as $it) {
@@ -383,7 +396,7 @@ class FacturaService
             $codigoSin = $it->producto->codigo_sin ?? '99100';
             $unidadSin = $it->producto->unidad_sin ?? '58';
             $detalle .= '<detalle>'
-                .'<actividadEconomica>474100</actividadEconomica>'
+                .'<actividadEconomica>'.$e($actividadEconomica).'</actividadEconomica>'
                 .'<codigoProductoSin>'.$e($codigoSin).'</codigoProductoSin>'
                 .'<codigoProducto>'.$e($it->codigo_producto).'</codigoProducto>'
                 .'<descripcion>'.$e($it->descripcion_producto).'</descripcion>'
@@ -392,13 +405,16 @@ class FacturaService
                 .'<precioUnitario>'.number_format((float) $it->precio_unitario, 2, '.', '').'</precioUnitario>'
                 .'<montoDescuento>0.00</montoDescuento>'
                 .'<subTotal>'.number_format((float) $it->subtotal, 2, '.', '').'</subTotal>'
+                .'<numeroSerie xsi:nil="true"/>'
+                .'<numeroImei xsi:nil="true"/>'
                 .'</detalle>';
         }
 
         $raizXml = SiatConfig::etiquetaRaizXml();
+        $xsiNs = 'xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="'.$raizXml.'.xsd"';
 
-        return '<?xml version="1.0" encoding="UTF-8"?>'
-            .'<'.$raizXml.'>'
+        return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            .'<'.$raizXml.' '.$xsiNs.'>'
             .'<cabecera>'
             ."<nitEmisor>{$nitEmisor}</nitEmisor>"
             ."<razonSocialEmisor>{$razonEmisor}</razonSocialEmisor>"
@@ -407,9 +423,6 @@ class FacturaService
             ."<numeroFactura>{$e($numeroFactura)}</numeroFactura>"
             ."<cuf>{$e($cuf)}</cuf>"
             ."<cufd>{$cufdValor}</cufd>"
-            .($cafc ? "<cafc>{$e($cafc)}</cafc>" : '')
-            // Computarizada exige el código de control del CUFD en el XML.
-            .($codigoControl && SiatConfig::esComputarizada() ? "<codigoControl>{$e($codigoControl)}</codigoControl>" : '')
             ."<codigoSucursal>{$codigoSucursal}</codigoSucursal>"
             ."<direccion>{$direccion}</direccion>"
             ."<codigoPuntoVenta>{$codigoPuntoVenta}</codigoPuntoVenta>"
@@ -417,14 +430,18 @@ class FacturaService
             ."<nombreRazonSocial>{$clienteNombre}</nombreRazonSocial>"
             ."<codigoTipoDocumentoIdentidad>{$tipoDoc}</codigoTipoDocumentoIdentidad>"
             ."<numeroDocumento>{$e($nitCliente)}</numeroDocumento>"
+            .'<complemento xsi:nil="true"/>'
             ."<codigoCliente>{$e($venta->cliente_id ?? $nitCliente)}</codigoCliente>"
             ."<codigoMetodoPago>{$metodoPago}</codigoMetodoPago>"
+            .'<numeroTarjeta xsi:nil="true"/>'
             .'<montoTotal>'.number_format((float) $venta->total, 2, '.', '').'</montoTotal>'
             .'<montoTotalSujetoIva>'.number_format((float) $venta->total, 2, '.', '').'</montoTotalSujetoIva>'
             .'<codigoMoneda>1</codigoMoneda><tipoCambio>1</tipoCambio>'
             .'<montoTotalMoneda>'.number_format((float) $venta->total, 2, '.', '').'</montoTotalMoneda>'
+            .'<montoGiftCard xsi:nil="true"/>'
             .'<descuentoAdicional>'.number_format((float) $venta->descuento, 2, '.', '').'</descuentoAdicional>'
             .'<codigoExcepcion>0</codigoExcepcion>'
+            .($cafc ? '<cafc>'.$e($cafc).'</cafc>' : '<cafc xsi:nil="true"/>')
             .'<leyenda>'.$e($this->leyenda()).'</leyenda>'
             .'<usuario>'.$e(auth()->user()->name ?? 'admin').'</usuario>'
             .'<codigoDocumentoSector>1</codigoDocumentoSector>'
@@ -439,6 +456,7 @@ class FacturaService
         $pdf = Pdf::loadView('facturas.pdf', [
             'factura' => $factura,
             'empresa' => Configuracion::empresa(),
+            'qrUrl' => $this->urlQr($factura, 2, 360),
         ]);
         $pdf->setOption('isRemoteEnabled', true);
         $pdf->setPaper('letter');
@@ -449,11 +467,29 @@ class FacturaService
         return $path;
     }
 
-    public function urlQr(FacturaElectronica $factura): string
+    public function urlVerificacionQr(FacturaElectronica $factura, int $tamano = 2): string
     {
-        $nit = SiatConfig::get('siat_nit', '0');
-        $data = "https://siat.impuestos.gob.bo/consulta/QR?nit={$nit}&cuf={$factura->cuf}&numero={$factura->numero_factura}&t=2";
+        $dominio = SiatConfig::codigoAmbienteSin() === 1
+            ? 'https://siat.impuestos.gob.bo'
+            : 'https://pilotosiat.impuestos.gob.bo';
+        $nit = preg_replace('/\D/', '', (string) SiatConfig::get('siat_nit', '0')) ?: '0';
+        preg_match('/(\d+)$/', (string) $factura->numero_factura, $coincidencias);
+        $numero = ltrim($coincidencias[1] ?? '', '0') ?: '0';
+        $tamano = in_array($tamano, [1, 2], true) ? $tamano : 1;
 
-        return 'https://api.qrserver.com/v1/create-qr-code/?size=150x150&data='.urlencode($data);
+        return $dominio.'/consulta/QR?'.http_build_query([
+            'nit' => $nit,
+            'cuf' => (string) $factura->cuf,
+            'numero' => $numero,
+            't' => $tamano,
+        ], '', '&', PHP_QUERY_RFC3986);
+    }
+
+    public function urlQr(FacturaElectronica $factura, int $tamano = 2, int $pixeles = 300): string
+    {
+        $pixeles = max(120, min($pixeles, 600));
+        $data = $this->urlVerificacionQr($factura, $tamano);
+
+        return "https://api.qrserver.com/v1/create-qr-code/?size={$pixeles}x{$pixeles}&data=".rawurlencode($data);
     }
 }

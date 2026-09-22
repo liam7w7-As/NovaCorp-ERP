@@ -47,7 +47,7 @@
           <td class="text-end" style="white-space:nowrap;">
             <button class="btn-giseca btn-outline btn-icon btn-sm" title="Ver detalle" onclick='verDetalle(@json($c->load("detalles")))'><i class="bi bi-eye"></i></button>
             <a class="btn-giseca btn-outline btn-icon btn-sm" title="Editar" href="{{ route('compras.edit', $c) }}"><i class="bi bi-pencil"></i></a>
-            @can('admin')<form method="POST" action="{{ route('compras.destroy', $c) }}" style="display:inline;" onsubmit="return confirm('¿Eliminar la compra {{ $c->numero }}? Se revertirá el stock y se borrará su comprobante.')">@csrf @method('DELETE')<button type="submit" class="btn-giseca btn-outline btn-icon btn-sm" title="Eliminar"><i class="bi bi-trash" style="color:var(--gc-rojo);"></i></button></form>@endcan
+            @can('admin')<form method="POST" action="{{ route('compras.destroy', $c) }}" style="display:inline;" data-confirm="¿Eliminar la compra {{ $c->numero }}? Se revertirá el stock y se borrará su comprobante." data-confirm-title="Eliminar compra" data-confirm-label="Eliminar" data-confirm-variant="peligro">@csrf @method('DELETE')<button type="submit" class="btn-giseca btn-outline btn-icon btn-sm" title="Eliminar"><i class="bi bi-trash" style="color:var(--gc-rojo);"></i></button></form>@endcan
           </td>
         </tr>
       @empty

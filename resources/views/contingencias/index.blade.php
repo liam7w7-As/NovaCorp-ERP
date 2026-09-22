@@ -13,7 +13,7 @@
 @else
   <div class="card-giseca" style="margin-bottom:16px;">
     <h6>Abrir evento significativo</h6>
-    <form method="POST" action="{{ route('contingencias.abrir') }}">
+    <form method="POST" action="{{ route('contingencias.abrir') }}" data-confirm="Se abrirá un evento de contingencia y las nuevas emisiones fuera de línea quedarán vinculadas a él." data-confirm-title="Abrir contingencia" data-confirm-label="Registrar inicio">
       @csrf
       <div style="display:grid; grid-template-columns:1fr 2fr auto; gap:10px; align-items:end;">
         <div><label class="form-label-giseca">Código SIN (1-7) *</label>
@@ -56,10 +56,10 @@
           </td>
           <td class="text-end" style="white-space:nowrap;">
             @if($ev->estado === 'abierto')
-              <form method="POST" action="{{ route('contingencias.cerrar', $ev) }}" style="display:inline;">@csrf<button class="btn-giseca btn-outline btn-sm">Cerrar evento</button></form>
+              <form method="POST" action="{{ route('contingencias.cerrar', $ev) }}" style="display:inline;" data-confirm="Se cerrará el evento EV-{{ $ev->id }} y ya no recibirá nuevas facturas." data-confirm-title="Cerrar contingencia" data-confirm-label="Cerrar evento">@csrf<button class="btn-giseca btn-outline btn-sm">Cerrar evento</button></form>
             @endif
             @if(in_array($ev->estado, ['cerrado', 'enviado']))
-              <form method="POST" action="{{ route('contingencias.empaquetar', $ev) }}" style="display:inline;">@csrf<button class="btn-giseca btn-outline btn-sm"><i class="bi bi-box-seam"></i> Empaquetar y enviar</button></form>
+              <form method="POST" action="{{ route('contingencias.empaquetar', $ev) }}" style="display:inline;" data-confirm="Se generará el paquete de facturas del evento EV-{{ $ev->id }} y se enviará al SIN." data-confirm-title="Enviar paquete al SIN" data-confirm-label="Empaquetar y enviar">@csrf<button class="btn-giseca btn-outline btn-sm"><i class="bi bi-box-seam"></i> Empaquetar y enviar</button></form>
             @endif
             @if($ev->estado === 'enviado')
               <form method="POST" action="{{ route('contingencias.validar', $ev) }}" style="display:inline;">@csrf<button class="btn-giseca btn-outline btn-sm"><i class="bi bi-check-circle"></i> Validar</button></form>

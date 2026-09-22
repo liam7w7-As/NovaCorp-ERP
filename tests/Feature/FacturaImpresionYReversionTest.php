@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Mail\FacturaCorreo;
 use App\Models\Cliente;
+use App\Models\Configuracion;
 use App\Models\DetalleVenta;
 use App\Models\FacturaElectronica;
 use App\Models\Producto;
@@ -151,6 +152,23 @@ class FacturaImpresionYReversionTest extends TestCase
         $response->assertStatus(200);
         $this->assertStringContainsString('application/pdf', $response->headers->get('Content-Type'));
         $this->assertStringContainsString('rollo-58mm.pdf', $response->headers->get('Content-Disposition'));
+    }
+
+    public function test_qr_fiscal_incluye_parametros_requeridos_y_correlativo_numerico(): void
+    {
+        Configuracion::set('siat_ambiente', 'produccion', 'text');
+        Configuracion::set('siat_nit', '699765026', 'text');
+        $this->factura->update([
+            'numero_factura' => 'FAC-S1-P2-000019',
+            'cuf' => '2FE13EE6B10B562B0DFF0732AE4E8CD3329CA17DE5220EA1E8833BF74',
+        ]);
+
+        $url = app(FacturaService::class)->urlVerificacionQr($this->factura->fresh(), 2);
+
+        $this->assertSame(
+            'https://siat.impuestos.gob.bo/consulta/QR?nit=699765026&cuf=2FE13EE6B10B562B0DFF0732AE4E8CD3329CA17DE5220EA1E8833BF74&numero=19&t=2',
+            $url,
+        );
     }
 
     public function test_anulacion_y_reversion_valida_dentro_del_plazo(): void

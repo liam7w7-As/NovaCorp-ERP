@@ -41,7 +41,7 @@
             <td>{{ $p->telefono ?: '—' }}</td>
             <td style="white-space:nowrap;" onclick="event.stopPropagation();">
               <button class="btn-giseca btn-outline btn-icon btn-sm" title="Editar" onclick='editarProveedor(@json($p))'><i class="bi bi-pencil"></i></button>
-              @can('admin')<form method="POST" action="{{ route('proveedores.destroy', $p) }}" style="display:inline;" onsubmit="return confirm('¿Eliminar proveedor {{ $p->nombre }}?')">
+              @can('admin')<form method="POST" action="{{ route('proveedores.destroy', $p) }}" style="display:inline;" data-confirm="¿Eliminar al proveedor {{ $p->nombre }}?" data-confirm-title="Eliminar proveedor" data-confirm-label="Eliminar" data-confirm-variant="peligro">
                 @csrf
                 @method('DELETE')
                 <button type="submit" class="btn-giseca btn-outline btn-icon btn-sm" title="Eliminar"><i class="bi bi-trash"></i></button>

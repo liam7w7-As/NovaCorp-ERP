@@ -145,7 +145,7 @@
       <span>{{ $factura->codigo_recepcion ?: '—' }}</span>
     </td>
     <td rowspan="2" class="qr-box">
-      <img src="https://api.qrserver.com/v1/create-qr-code/?size=65x65&data={{ urlencode('https://siat.impuestos.gob.bo/consulta/QR?nit='.\App\Services\SiatConfig::get('siat_nit', '0').'&cuf='.$factura->cuf.'&numero='.$factura->numero_factura.'&t=2') }}" width="65" height="65" alt="QR Fiscal" style="display:block; margin: 0 auto;">
+      <img src="{{ $qrUrl }}" width="115" height="115" alt="QR Fiscal" style="display:block; margin: 0 auto;">
     </td>
   </tr>
   <tr>

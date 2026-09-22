@@ -21,7 +21,7 @@
             </td>
             <td class="text-end" style="white-space:nowrap;">
               <form method="POST" action="{{ route('papelera.restaurar', [$clave, $it->id]) }}" style="display:inline;">@csrf<button class="btn-giseca btn-outline btn-sm"><i class="bi bi-arrow-counterclockwise"></i> Restaurar</button></form>
-              <form method="POST" action="{{ route('papelera.eliminar', [$clave, $it->id]) }}" style="display:inline;" onsubmit="return confirm('Eliminar DEFINITIVAMENTE. No se puede deshacer.')">@csrf @method('DELETE')<button class="btn-giseca btn-outline btn-sm"><i class="bi bi-trash" style="color:var(--gc-rojo);"></i> Definitivo</button></form>
+              <form method="POST" action="{{ route('papelera.eliminar', [$clave, $it->id]) }}" style="display:inline;" data-confirm="Se eliminará definitivamente y no se podrá recuperar. ¿Deseas continuar?" data-confirm-title="Eliminación definitiva" data-confirm-label="Eliminar definitivamente" data-confirm-variant="peligro">@csrf @method('DELETE')<button class="btn-giseca btn-outline btn-sm"><i class="bi bi-trash" style="color:var(--gc-rojo);"></i> Definitivo</button></form>
             </td>
           </tr>
         @endforeach

@@ -111,7 +111,7 @@
       <div class="cuf-val">{{ $factura->cufd ?: '—' }}</div>
     </td>
     <td rowspan="2" style="width: 20%; text-align: center; vertical-align: middle;">
-      <img src="https://api.qrserver.com/v1/create-qr-code/?size=85x85&data={{ urlencode('https://siat.impuestos.gob.bo/consulta/QR?nit='.\App\Services\SiatConfig::get('siat_nit', '0').'&cuf='.$factura->cuf.'&numero='.$factura->numero_factura.'&t=2') }}" width="85" height="85" alt="QR Fiscal" style="display:block; margin:0 auto;">
+      <img src="{{ $qrUrl }}" width="115" height="115" alt="QR Fiscal" style="display:block; margin:0 auto;">
     </td>
   </tr>
   <tr>

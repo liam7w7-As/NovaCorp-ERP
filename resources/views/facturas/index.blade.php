@@ -68,7 +68,7 @@
               @if($f->estado === 'emitida')
                 @can('facturas.emitir')<button class="btn-giseca btn-outline btn-icon btn-sm" title="Anular" onclick="abrirModalAnular('{{ route('facturas.anular', $f) }}', '{{ $f->numero_factura }}')"><i class="bi bi-x-circle" style="color:var(--gc-rojo);"></i></button>@endcan
               @elseif($f->estado !== 'emitida' && $f->estado !== 'anulada')
-                @can('admin')<form method="POST" action="{{ route('facturas.destroy', $f) }}" style="display:inline;" onsubmit="return confirm('¿Eliminar este registro?')">@csrf @method('DELETE')<button class="btn-giseca btn-outline btn-icon btn-sm" title="Eliminar"><i class="bi bi-trash" style="color:var(--gc-rojo);"></i></button></form>@endcan
+                @can('admin')<form method="POST" action="{{ route('facturas.destroy', $f) }}" style="display:inline;" data-confirm="¿Eliminar este registro de factura? Esta acción solo está disponible para documentos no emitidos." data-confirm-title="Eliminar registro" data-confirm-label="Eliminar" data-confirm-variant="peligro">@csrf @method('DELETE')<button class="btn-giseca btn-outline btn-icon btn-sm" title="Eliminar"><i class="bi bi-trash" style="color:var(--gc-rojo);"></i></button></form>@endcan
               @endif
             </td>
           </tr>

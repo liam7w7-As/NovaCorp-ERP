@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\CatalogoSin;
 use App\Models\Cliente;
 use App\Models\Compra;
 use App\Models\Comprobante;
@@ -35,6 +36,8 @@ class ConfiguracionController extends Controller
             'membretado' => Configuracion::membretado(),
 
             'siat' => SiatConfig::todo(),
+
+            'actividadesSiat' => CatalogoSin::lista('actividad'),
 
             'eventos' => EventoSiat::orderByDesc('id')
                 ->limit(10)
@@ -313,6 +316,8 @@ class ConfiguracionController extends Controller
             'siat_nit' => 'required|numeric',
 
             'siat_razon_social' => 'required|string|max:255',
+
+            'siat_actividad_economica' => 'nullable|string|max:10',
 
             'siat_codigo_sistema' => 'nullable|string|max:100',
 

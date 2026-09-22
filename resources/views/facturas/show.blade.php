@@ -31,7 +31,7 @@
       @can('facturas.emitir')<button class="btn-giseca btn-outline btn-sm" onclick="document.getElementById('modalAnular').classList.add('abierto')"><i class="bi bi-x-circle" style="color:var(--gc-rojo);"></i> Anular</button>@endcan
     @endif
     @if($factura->estado === 'anulada')
-      @can('facturas.emitir')<form method="POST" action="{{ route('facturas.revertir', $factura) }}" style="display:inline;" onsubmit="return confirm('¿Revertir la anulación? La factura vuelve a EMITIDA conforme a normativa SIN.')">@csrf<button class="btn-giseca btn-outline btn-sm"><i class="bi bi-arrow-counterclockwise" style="color:var(--gc-verde);"></i> Revertir anulación</button></form>@endcan
+      @can('facturas.emitir')<form method="POST" action="{{ route('facturas.revertir', $factura) }}" style="display:inline;" data-confirm="¿Revertir la anulación? La factura volverá a estado EMITIDA ante el SIN." data-confirm-title="Revertir anulación" data-confirm-label="Revertir">@csrf<button class="btn-giseca btn-outline btn-sm"><i class="bi bi-arrow-counterclockwise" style="color:var(--gc-verde);"></i> Revertir anulación</button></form>@endcan
     @endif
   </div>
 </div>
@@ -105,7 +105,9 @@
   <div class="no-imprimir" style="display:flex; justify-content:flex-end; margin-top:14px;">
     <div style="text-align:center;">
       <div style="font-size:10px;">Verificación SIN</div>
-      <img style="width:120px; height:120px;" src="https://api.qrserver.com/v1/create-qr-code/?size=120x120&data={{ urlencode('https://siat.impuestos.gob.bo/consulta/QR?cuf=' . $factura->cuf) }}" alt="QR">
+      <a href="{{ $urlVerificacionQr }}" target="_blank" rel="noopener noreferrer" title="Verificar factura en el SIN">
+        <img style="width:120px; height:120px;" src="{{ $qrUrl }}" alt="QR de verificación SIN">
+      </a>
     </div>
   </div>
 </div>

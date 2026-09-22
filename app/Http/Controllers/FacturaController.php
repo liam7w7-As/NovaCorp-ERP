@@ -65,12 +65,16 @@ class FacturaController extends Controller
         ]);
     }
 
-    public function show(FacturaElectronica $factura)
+    public function show(FacturaElectronica $factura, FacturaService $facturas)
     {
         SucursalContext::autorizaSucursal($factura->sucursal_id);
         $factura->load('venta.detalles', 'usuario', 'notas', 'sucursal', 'puntoVenta');
 
-        return view('facturas.show', compact('factura'));
+        return view('facturas.show', [
+            'factura' => $factura,
+            'qrUrl' => $facturas->urlQr($factura, 2, 360),
+            'urlVerificacionQr' => $facturas->urlVerificacionQr($factura, 2),
+        ]);
     }
 
     /**
@@ -114,7 +118,7 @@ class FacturaController extends Controller
         }
     }
 
-    public function reenviarCorreo(Request $request, FacturaElectronica $factura)
+    public function reenviarCorreo(Request $request, FacturaElectronica $factura, FacturaService $facturas)
     {
         SucursalContext::autorizaSucursal($factura->sucursal_id);
         $request->validate([
@@ -131,6 +135,7 @@ class FacturaController extends Controller
         }
 
         try {
+            $factura->update(['pdf_path' => $facturas->generarPdf($factura)]);
             Mail::to($destino)->send(new FacturaCorreo($factura, $factura->estado === 'anulada' ? 'anulada' : 'emitida'));
 
             return back()->with('exito', "Factura enviada exitosamente a {$destino}.");
@@ -248,21 +253,20 @@ class FacturaController extends Controller
     public function descargarPdf(FacturaElectronica $factura, FacturaService $facturas)
     {
         SucursalContext::autorizaSucursal($factura->sucursal_id);
-        if (! $factura->pdf_path || ! Storage::disk('public')->exists($factura->pdf_path)) {
-            $path = $facturas->generarPdf($factura);
-            $factura->update(['pdf_path' => $path]);
-        }
+        $path = $facturas->generarPdf($factura);
+        $factura->update(['pdf_path' => $path]);
 
         return Storage::disk('public')->download($factura->pdf_path, $factura->numero_factura.'.pdf');
     }
 
-    public function descargarPdfRollo(FacturaElectronica $factura)
+    public function descargarPdfRollo(FacturaElectronica $factura, FacturaService $facturas)
     {
         SucursalContext::autorizaSucursal($factura->sucursal_id);
         $factura->load(['venta.detalles', 'sucursal', 'puntoVenta']);
         $pdf = Pdf::loadView('facturas.pdf-rollo', [
             'factura' => $factura,
             'empresa' => Configuracion::empresa(),
+            'qrUrl' => $facturas->urlQr($factura, 1, 360),
         ]);
         $pdf->setOption('isRemoteEnabled', true);
         $pdf->setPaper([0, 0, 226.77, 800], 'portrait'); // 80mm de ancho, largo dinámico
@@ -270,13 +274,14 @@ class FacturaController extends Controller
         return $pdf->download($factura->numero_factura.'-rollo-80mm.pdf');
     }
 
-    public function descargarPdfMedioOficio(FacturaElectronica $factura)
+    public function descargarPdfMedioOficio(FacturaElectronica $factura, FacturaService $facturas)
     {
         SucursalContext::autorizaSucursal($factura->sucursal_id);
         $factura->load(['venta.detalles', 'sucursal', 'puntoVenta']);
         $pdf = Pdf::loadView('facturas.pdf-medio-oficio', [
             'factura' => $factura,
             'empresa' => Configuracion::empresa(),
+            'qrUrl' => $facturas->urlQr($factura, 2, 360),
         ]);
         $pdf->setOption('isRemoteEnabled', true);
         // Half Letter / Medio Oficio: 5.5 x 8.5 inches = 396 x 612 pt
@@ -285,13 +290,14 @@ class FacturaController extends Controller
         return $pdf->download($factura->numero_factura.'-medio-oficio.pdf');
     }
 
-    public function descargarPdfRollo58(FacturaElectronica $factura)
+    public function descargarPdfRollo58(FacturaElectronica $factura, FacturaService $facturas)
     {
         SucursalContext::autorizaSucursal($factura->sucursal_id);
         $factura->load(['venta.detalles', 'sucursal', 'puntoVenta']);
         $pdf = Pdf::loadView('facturas.pdf-rollo-58', [
             'factura' => $factura,
             'empresa' => Configuracion::empresa(),
+            'qrUrl' => $facturas->urlQr($factura, 1, 360),
         ]);
         $pdf->setOption('isRemoteEnabled', true);
         // Rollo 58mm térmico: 58mm = 164.41 pt

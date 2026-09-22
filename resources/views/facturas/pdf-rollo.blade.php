@@ -79,7 +79,7 @@
 <div class="linea"></div>
 
 <div class="qr-center">
-  <img src="https://api.qrserver.com/v1/create-qr-code/?size=70x70&data={{ urlencode('https://siat.impuestos.gob.bo/consulta/QR?nit='.\App\Services\SiatConfig::get('siat_nit', '0').'&cuf='.$factura->cuf.'&numero='.$factura->numero_factura.'&t=2') }}" width="70" height="70" alt="QR">
+  <img src="{{ $qrUrl }}" width="115" height="115" alt="QR de verificación SIN">
 </div>
 
 <div class="c" style="font-size:7.5px; margin-top:2px;">

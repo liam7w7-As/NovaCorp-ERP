@@ -178,7 +178,8 @@
                             @if ($v->estado === 'activa')
                                 @can('admin')
                                     <form method="POST" action="{{ route('ventas.anular', $v) }}" style="display:inline;"
-                                        onsubmit="return confirm('¿Anular la venta {{ $v->numero }}? Se actualizarán las reservas y entregas de almacén.')">
+                                        data-confirm="¿Anular la venta {{ $v->numero }}? Se actualizarán las reservas y entregas de almacén."
+                                        data-confirm-title="Anular venta" data-confirm-label="Anular venta" data-confirm-variant="peligro">
                                         @csrf<button type="submit" class="btn-giseca btn-outline btn-icon btn-sm"
                                             title="Anular"><i class="bi bi-x-circle"></i></button></form>
                                 @endcan
@@ -221,7 +222,8 @@
                                 href="{{ route('ventas.edit', $v) }}"><i class="bi bi-pencil"></i></a>
                             @can('admin')
                                 <form method="POST" action="{{ route('ventas.destroy', $v) }}" style="display:inline;"
-                                    onsubmit="return confirm('¿Eliminar la venta {{ $v->numero }}? Se actualizará almacén y se borrará su comprobante.')">
+                                    data-confirm="¿Eliminar la venta {{ $v->numero }}? Se actualizará almacén y se borrará su comprobante."
+                                    data-confirm-title="Eliminar venta" data-confirm-label="Eliminar" data-confirm-variant="peligro">
                                     @csrf @method('DELETE')<button type="submit"
                                         class="btn-giseca btn-outline btn-icon btn-sm" title="Eliminar"><i
                                             class="bi bi-trash" style="color:var(--gc-rojo);"></i></button></form>

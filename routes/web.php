@@ -44,6 +44,8 @@ Route::middleware(['auth'])->group(function () {
     // Productos / Inventario (eliminar: solo admin)
     Route::middleware('permiso:productos')->group(function () {
         Route::get('/productos/buscar', [ProductoController::class, 'buscar'])->name('productos.buscar');
+        Route::get('/productos/homologacion/sugerencias', [ProductoController::class, 'sugerenciasHomologacion'])->name('productos.homologacion.sugerencias');
+        Route::post('/productos/homologacion', [ProductoController::class, 'homologar'])->name('productos.homologacion.store');
         Route::get('/productos/{producto}/codigo-barra', [ProductoController::class, 'codigoBarra'])->name('productos.barra');
         Route::post('/productos/importar', [ProductoController::class, 'importar'])->name('productos.importar');
         Route::resource('productos', ProductoController::class)->except(['show', 'create', 'edit', 'destroy']);

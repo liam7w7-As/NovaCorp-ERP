@@ -14,7 +14,7 @@
         </span>
       </div>
       <div style="font-size:12.5px; color:var(--gc-gris); margin-top:4px;">
-        Administración de Casa Matriz y agencias fiscales. Cada punto de venta mantiene su ciclo independiente de CUIS (anual) y CUFD (diario).
+        Administración de Casa Matriz y agencias fiscales. Cada punto de venta mantiene su ciclo independiente de CUIS (anual) y CUFD (24 horas). El sistema revisa cada 10 minutos y renueva cuando queda una hora o menos.
       </div>
     </div>
     <div style="display:flex; gap:8px;">
@@ -60,7 +60,7 @@
             <i class="bi bi-pencil"></i>
           </button>
           @if($sucursal->codigo !== 0)
-            <form method="POST" action="{{ route('sucursales.destroy', $sucursal) }}" style="margin:0;" onsubmit="return confirm('¿Seguro de eliminar esta sucursal?');">
+            <form method="POST" action="{{ route('sucursales.destroy', $sucursal) }}" style="margin:0;" data-confirm="¿Eliminar la sucursal {{ $sucursal->nombre }}?" data-confirm-title="Eliminar sucursal" data-confirm-label="Eliminar" data-confirm-variant="peligro">
               @csrf @method('DELETE')
               <button type="submit" class="btn-giseca btn-outline btn-sm" style="color:var(--gc-rojo);">
                 <i class="bi bi-trash"></i>
@@ -89,6 +89,7 @@
                 $esActivoSesion = ($sucursal->id === $sucursalActual->id && $pv->id === $puntoVentaActual->id);
                 $cuisOk = $pv->tieneCuisVigente();
                 $cufdOk = $pv->tieneCufdVigente();
+                $cufdPorVencer = $cufdOk && $pv->cufd_vigencia->lessThanOrEqualTo(now()->addHours(2));
               @endphp
               <tr style="{{ $esActivoSesion ? 'background:rgba(37,99,235,0.03);' : '' }}">
                 <td>
@@ -117,14 +118,16 @@
                 </td>
                 <td>
                   @if($cufdOk)
-                    <span class="estado estado-aprobada" title="Vence: {{ $pv->cufd_vigencia?->format('d/m/Y H:i') }}">
-                      <i class="bi bi-clock-check"></i> CUFD VIGENTE
+                    <span class="estado {{ $cufdPorVencer ? 'estado-enviada' : 'estado-aprobada' }}" title="Vence: {{ $pv->cufd_vigencia?->format('d/m/Y H:i:s') }}">
+                      <i class="bi {{ $cufdPorVencer ? 'bi-clock-history' : 'bi-clock-check' }}"></i> {{ $cufdPorVencer ? 'PRÓXIMO A VENCER' : 'CUFD VIGENTE' }}
                     </span>
+                    <div style="font-size:10.5px; color:var(--gc-gris); margin-top:3px;">Vence {{ $pv->cufd_vigencia->format('d/m/Y H:i') }} · {{ $pv->cufd_vigencia->diffForHumans() }}</div>
                     <div style="font-size:10.5px; color:var(--gc-gris); margin-top:2px;">Ctrl: {{ $pv->codigo_control ?: 'SIM-CTRL' }}</div>
                   @else
                     <span class="estado estado-vencida">
                       <i class="bi bi-clock-history"></i> CUFD EXPIRADO
                     </span>
+                    @if($pv->cufd_vigencia)<div style="font-size:10.5px; color:var(--gc-rojo); margin-top:3px;">Venció {{ $pv->cufd_vigencia->diffForHumans() }}</div>@endif
                   @endif
                 </td>
                 <td style="text-align:right; white-space:nowrap;">

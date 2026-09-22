@@ -133,10 +133,101 @@ function gcInicializarTomSelect() {
   });
 }
 
+var gcDialogResolver = null;
+var gcDialogFocoAnterior = null;
+
+function gcCerrarDialogo(resultado) {
+  var modal = document.getElementById('gcDialog');
+  if (!modal || !modal.classList.contains('abierto')) return;
+  modal.classList.remove('abierto');
+  document.body.style.overflow = '';
+  if (gcDialogFocoAnterior && typeof gcDialogFocoAnterior.focus === 'function') gcDialogFocoAnterior.focus();
+  if (gcDialogResolver) gcDialogResolver(resultado);
+  gcDialogResolver = null;
+}
+
+function gcAbrirDialogo(mensaje, opciones) {
+  opciones = opciones || {};
+  var modal = document.getElementById('gcDialog');
+  var titulo = document.getElementById('gcDialogTitle');
+  var texto = document.getElementById('gcDialogMessage');
+  var icono = document.getElementById('gcDialogIcon');
+  var cancelar = document.getElementById('gcDialogCancel');
+  var confirmar = document.getElementById('gcDialogConfirm');
+  var soloAviso = opciones.soloAviso === true;
+  var variante = opciones.variante || 'advertencia';
+
+  gcDialogFocoAnterior = document.activeElement;
+  titulo.textContent = opciones.titulo || (soloAviso ? 'Revisa la información' : 'Confirmar acción');
+  texto.textContent = mensaje;
+  cancelar.style.display = soloAviso ? 'none' : '';
+  cancelar.textContent = opciones.cancelar || 'Cancelar';
+  confirmar.textContent = opciones.confirmar || (soloAviso ? 'Entendido' : 'Confirmar');
+  confirmar.className = 'btn-giseca ' + (variante === 'peligro' ? 'btn-peligro' : 'btn-primario');
+  icono.className = 'gc-dialog-icon ' + variante;
+  icono.innerHTML = variante === 'peligro'
+    ? '<i class="bi bi-exclamation-triangle"></i>'
+    : (soloAviso ? '<i class="bi bi-info-lg"></i>' : '<i class="bi bi-question-lg"></i>');
+  modal.classList.add('abierto');
+  document.body.style.overflow = 'hidden';
+  setTimeout(function () { confirmar.focus(); }, 0);
+
+  return new Promise(function (resolve) { gcDialogResolver = resolve; });
+}
+
+window.GisecaDialog = {
+  confirm: function (mensaje, opciones) { return gcAbrirDialogo(mensaje, opciones); },
+  alert: function (mensaje, opciones) {
+    opciones = opciones || {};
+    opciones.soloAviso = true;
+    return gcAbrirDialogo(mensaje, opciones);
+  }
+};
+
+function gcInicializarDialogos() {
+  var modal = document.getElementById('gcDialog');
+  var cancelar = document.getElementById('gcDialogCancel');
+  var confirmar = document.getElementById('gcDialogConfirm');
+  if (!modal || !cancelar || !confirmar) return;
+
+  cancelar.addEventListener('click', function () { gcCerrarDialogo(false); });
+  confirmar.addEventListener('click', function () { gcCerrarDialogo(true); });
+  modal.addEventListener('click', function (e) {
+    if (e.target === modal) gcCerrarDialogo(false);
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && modal.classList.contains('abierto')) {
+      e.preventDefault();
+      gcCerrarDialogo(false);
+    }
+  });
+
+  document.addEventListener('submit', function (e) {
+    if (e.defaultPrevented) return;
+    var form = e.target;
+    var boton = e.submitter;
+    var mensaje = (boton && boton.getAttribute('data-confirm')) || form.getAttribute('data-confirm');
+    if (!mensaje || form.dataset.gcConfirmado === '1') return;
+
+    e.preventDefault();
+    var fuente = boton && boton.hasAttribute('data-confirm') ? boton : form;
+    GisecaDialog.confirm(mensaje, {
+      titulo: fuente.getAttribute('data-confirm-title') || 'Confirmar acción',
+      confirmar: fuente.getAttribute('data-confirm-label') || 'Confirmar',
+      variante: fuente.getAttribute('data-confirm-variant') || 'advertencia'
+    }).then(function (aceptado) {
+      if (!aceptado) return;
+      form.dataset.gcConfirmado = '1';
+      form.requestSubmit(boton || undefined);
+    });
+  });
+}
+
 document.addEventListener('DOMContentLoaded', function () {
   gcActualizarIconoTema();
   gcInicializarBusquedaGlobal();
   gcInicializarTomSelect();
+  gcInicializarDialogos();
 
   var toggleMenu = document.getElementById('gcMenuToggle');
   if (toggleMenu && !toggleMenu.getAttribute('onclick')) {

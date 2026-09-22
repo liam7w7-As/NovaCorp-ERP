@@ -266,19 +266,43 @@
     <div class="gc-main">
       <div class="gc-topbar">
         <button class="gc-menu-toggle btn btn-sm btn-outline-secondary" id="gcMenuToggle" onclick="gcAbrirSidebar()" title="Abrir menú"><i class="bi bi-list"></i></button>
-        <h1>@yield('title', 'Panel General')</h1>
+        @php
+          $rutaActual = request()->route()?->getName();
+          $rutasVolver = [
+            'ventas.create' => 'ventas.index',
+            'ventas.edit' => 'ventas.index',
+            'crm.leads.convertir' => 'crm.index',
+            'compras.create' => 'compras.index',
+            'compras.edit' => 'compras.index',
+            'proformas.create' => 'proformas.index',
+            'proformas.edit' => 'proformas.index',
+            'proformas.show' => 'proformas.index',
+            'comprobantes.edit' => 'comprobantes.index',
+            'comprobantes.show' => 'comprobantes.index',
+            'facturas.show' => 'facturas.index',
+            'kardex.show' => 'kardex.index',
+            'almacen.show' => 'almacen.index',
+          ];
+          $rutaVolver = $rutasVolver[$rutaActual] ?? null;
+        @endphp
+        <div class="gc-page-title">
+          @if($rutaVolver)
+            <a href="{{ route($rutaVolver) }}" class="gc-back-button" title="Volver al listado"><i class="bi bi-arrow-left"></i><span>Volver</span></a>
+          @endif
+          <h1>@yield('title', 'Panel General')</h1>
+        </div>
         <div class="gc-search">
           <i class="bi bi-search"></i>
           <input type="text" id="gcSearchInput" placeholder="Buscar productos, clientes, proformas...">
           <div class="gc-search-results" id="gcResultadosBusqueda"></div>
         </div>
-        <div style="display:flex; align-items:center; gap:10px; flex-shrink:0;">
+        <div class="gc-topbar-actions">
           @auth
           @php
           $sucActual = \App\Services\SucursalContext::sucursal();
           $posActual = \App\Services\SucursalContext::puntoVenta();
           @endphp
-          <a href="{{ route('sucursales.index') }}" class="codigo-chip" style="text-decoration:none; display:inline-flex; align-items:center; gap:5px; font-weight:600; padding:5px 10px; font-size:12px; background:var(--gc-superficie); border:1px solid var(--gc-borde); color:var(--gc-texto);" title="Sucursal y POS activo para ventas y facturación. Clic para cambiar.">
+          <a href="{{ route('sucursales.index') }}" class="codigo-chip gc-branch-chip" style="text-decoration:none; display:inline-flex; align-items:center; gap:5px; font-weight:600; padding:5px 10px; font-size:12px; background:var(--gc-superficie); border:1px solid var(--gc-borde); color:var(--gc-texto);" title="Sucursal y POS activo para ventas y facturación. Clic para cambiar.">
             <i class="bi bi-shop" style="color:var(--gc-primario);"></i>
             <span>{{ $sucActual->nombre }}</span>
             <span style="opacity:.5;">·</span>
@@ -294,8 +318,60 @@
           </form>
         </div>
       </div>
+      @auth
+        @php
+          $alertaCufd = null;
+          if (! \App\Services\SiatConfig::esSimulador()) {
+            $vigenciaCufd = $posActual->cufd_vigencia;
+            if (! $posActual->cufd || ! $vigenciaCufd) {
+              $alertaCufd = [
+                'tipo' => 'error',
+                'icono' => 'bi-exclamation-octagon',
+                'mensaje' => "{$posActual->nombre} no tiene un CUFD disponible.",
+              ];
+            } elseif ($vigenciaCufd->isPast()) {
+              $alertaCufd = [
+                'tipo' => 'error',
+                'icono' => 'bi-clock-history',
+                'mensaje' => "El CUFD de {$posActual->nombre} venció {$vigenciaCufd->diffForHumans()}.",
+              ];
+            } elseif ($vigenciaCufd->lessThanOrEqualTo(now()->addHours(2))) {
+              $alertaCufd = [
+                'tipo' => 'advertencia',
+                'icono' => 'bi-clock',
+                'mensaje' => "El CUFD de {$posActual->nombre} vence {$vigenciaCufd->diffForHumans()}. La renovación automática se ejecutará antes del vencimiento.",
+              ];
+            }
+          }
+        @endphp
+        @if($alertaCufd)
+          <div class="gc-cufd-alert {{ $alertaCufd['tipo'] }}" role="status">
+            <i class="bi {{ $alertaCufd['icono'] }}"></i>
+            <span>{{ $alertaCufd['mensaje'] }}</span>
+            @can('configuracion')
+              <a href="{{ route('sucursales.index') }}">Revisar CUFD</a>
+            @endcan
+          </div>
+        @endif
+      @endauth
       <div class="gc-content">
         @yield('content')
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-giseca" id="gcDialog" role="dialog" aria-modal="true" aria-labelledby="gcDialogTitle" aria-describedby="gcDialogMessage">
+    <div class="modal-box gc-dialog-box">
+      <div class="gc-dialog-head">
+        <div class="gc-dialog-icon" id="gcDialogIcon"><i class="bi bi-question-lg"></i></div>
+        <div class="gc-dialog-copy">
+          <h6 id="gcDialogTitle">Confirmar acción</h6>
+          <p id="gcDialogMessage"></p>
+        </div>
+      </div>
+      <div class="gc-dialog-actions">
+        <button type="button" class="btn-giseca btn-outline" id="gcDialogCancel">Cancelar</button>
+        <button type="button" class="btn-giseca btn-primario" id="gcDialogConfirm">Confirmar</button>
       </div>
     </div>
   </div>

@@ -105,7 +105,7 @@
             <span><i class="bi bi-cash"></i> {{ ucfirst($p->forma_pago) }}@if($p->banco) — {{ $p->banco }}@endif</span>
             <span style="display:flex; align-items:center; gap:8px;"><strong>Bs {{ formatoMoneda($p->monto) }}</strong>
               @if($seleccionado->pagos->count() > 1)
-                <form method="POST" action="{{ route('comprobantes.pagos.destroy', [$seleccionado, $p]) }}" style="display:inline;" onsubmit="return confirm('¿Quitar esta forma de pago?')">@csrf @method('DELETE')<button class="btn-giseca btn-outline btn-icon btn-sm" style="width:24px;height:24px;"><i class="bi bi-x" style="font-size:11px;"></i></button></form>
+                <form method="POST" action="{{ route('comprobantes.pagos.destroy', [$seleccionado, $p]) }}" style="display:inline;" data-confirm="¿Quitar esta forma de pago del comprobante?" data-confirm-title="Quitar forma de pago" data-confirm-label="Quitar" data-confirm-variant="peligro">@csrf @method('DELETE')<button class="btn-giseca btn-outline btn-icon btn-sm"><i class="bi bi-x"></i></button></form>
               @endif
             </span>
           </div>
@@ -119,7 +119,7 @@
         <a class="btn-giseca btn-oscuro" style="flex:1; justify-content:center;" href="{{ route('comprobantes.imprimir', $seleccionado) }}" target="_blank"><i class="bi bi-printer"></i> Imprimir</a>
         <a class="btn-giseca btn-outline" href="{{ route('comprobantes.edit', $seleccionado) }}"><i class="bi bi-pencil"></i> Editar</a>
         @if($seleccionado->es_manual)
-          @can('admin')<form method="POST" action="{{ route('comprobantes.destroy', $seleccionado) }}" style="display:inline;" onsubmit="return confirm('¿Eliminar este comprobante?')">@csrf @method('DELETE')<button class="btn-giseca btn-outline"><i class="bi bi-trash" style="color:var(--gc-rojo);"></i></button></form>@endcan
+          @can('admin')<form method="POST" action="{{ route('comprobantes.destroy', $seleccionado) }}" style="display:inline;" data-confirm="¿Eliminar este comprobante manual?" data-confirm-title="Eliminar comprobante" data-confirm-label="Eliminar" data-confirm-variant="peligro">@csrf @method('DELETE')<button class="btn-giseca btn-outline"><i class="bi bi-trash" style="color:var(--gc-rojo);"></i></button></form>@endcan
         @endif
       </div>
     @else

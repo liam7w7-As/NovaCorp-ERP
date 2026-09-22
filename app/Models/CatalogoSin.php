@@ -10,6 +10,10 @@ class CatalogoSin extends Model
 
     protected $fillable = ['tipo', 'codigo', 'descripcion', 'extra'];
 
+    protected $casts = [
+        'extra' => 'array',
+    ];
+
     public const TIPOS = [
         'actividad' => 'Actividades económicas',
         'producto' => 'Productos / servicios SIN',

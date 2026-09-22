@@ -10,7 +10,12 @@
         {{ session('error') }}</div>
 @endif
 
-<form method="POST" action="{{ $action }}" id="formVenta">
+<form method="POST" action="{{ $action }}" id="formVenta"
+    @if($method === 'POST')
+        data-confirm="Se registrará la venta, sus movimientos financieros y la reserva de productos. ¿Los datos son correctos?"
+        data-confirm-title="Confirmar venta"
+        data-confirm-label="Registrar venta"
+    @endif>
     @csrf
     @if ($method === 'PUT')
         @method('PUT')
@@ -394,12 +399,12 @@ Disponible: ${p.stock_disponible ?? p.stock}
             .value.trim();
         if (!cli) {
             e.preventDefault();
-            alert('Selecciona o escribe un cliente.');
+            GisecaDialog.alert('Selecciona un cliente registrado o escribe el nombre de uno nuevo.', { titulo: 'Falta el cliente' });
             return;
         }
         if (!document.querySelectorAll('#tablaItemsVenta tbody tr').length) {
             e.preventDefault();
-            alert('Agrega al menos un producto.');
+            GisecaDialog.alert('Agrega al menos un producto antes de registrar la venta.', { titulo: 'Venta sin productos' });
             return;
         }
     });

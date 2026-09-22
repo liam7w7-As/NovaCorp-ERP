@@ -41,7 +41,7 @@
             <td>{{ $c->telefono ?: '—' }}</td>
             <td style="white-space:nowrap;" onclick="event.stopPropagation();">
               <button class="btn-giseca btn-outline btn-icon btn-sm" title="Editar" onclick='editarCliente(@json($c))'><i class="bi bi-pencil"></i></button>
-              @can('admin')<form method="POST" action="{{ route('clientes.destroy', $c) }}" style="display:inline;" onsubmit="return confirm('¿Eliminar cliente {{ $c->nombre }}?')">
+              @can('admin')<form method="POST" action="{{ route('clientes.destroy', $c) }}" style="display:inline;" data-confirm="¿Eliminar al cliente {{ $c->nombre }}?" data-confirm-title="Eliminar cliente" data-confirm-label="Eliminar" data-confirm-variant="peligro">
                 @csrf
                 @method('DELETE')
                 <button type="submit" class="btn-giseca btn-outline btn-icon btn-sm" title="Eliminar"><i class="bi bi-trash"></i></button>
@@ -76,7 +76,7 @@
           <button class="btn-giseca btn-outline btn-sm" onclick='editarCliente(@json($seleccionado))'><i class="bi bi-pencil"></i> Editar</button>
         </div>
         <div style="font-size:13px; color:var(--gc-gris); line-height:1.9;">
-          <div><strong>NIT/CI:</strong> {{ $seleccionado->nit ?: '—' }}
+          <div><strong>{{ [1 => 'CI', 2 => 'CEX', 3 => 'PAS', 4 => 'OD', 5 => 'NIT'][$seleccionado->codigo_tipo_documento] ?? 'Documento' }}:</strong> {{ $seleccionado->nit ?: '—' }}
             @if($seleccionado->nit)
               @php $okDigito = \App\Services\NitHelper::coincideDigito($seleccionado->nit); @endphp
               @if($okDigito === true)
@@ -115,7 +115,10 @@
       <div id="methodCliente"></div>
       <div style="display:grid; gap:10px;">
         <div><label class="form-label-giseca">Nombre / Razón social *</label><input class="form-control-giseca" id="f_nombre" name="nombre" required></div>
-        <div><label class="form-label-giseca">NIT / CI</label><input class="form-control-giseca" id="f_nit" name="nit"></div>
+        <div style="display:grid; grid-template-columns:minmax(110px,.45fr) minmax(0,1fr); gap:10px;">
+          <div><label class="form-label-giseca">Tipo documento</label><select class="form-control-giseca" id="f_codigo_tipo_documento" name="codigo_tipo_documento" required><option value="5">NIT</option><option value="1">CI</option><option value="2">CEX</option><option value="3">Pasaporte</option><option value="4">Otro</option></select></div>
+          <div><label class="form-label-giseca">Número</label><input class="form-control-giseca" id="f_nit" name="nit"></div>
+        </div>
         <div><label class="form-label-giseca">Teléfono</label><input class="form-control-giseca" id="f_telefono" name="telefono"></div>
         <div><label class="form-label-giseca">Correo</label><input type="email" class="form-control-giseca" id="f_correo" name="correo"></div>
         <div><label class="form-label-giseca">Persona de contacto</label><input class="form-control-giseca" id="f_contacto" name="contacto"></div>
@@ -152,6 +155,7 @@ function abrirModal() {
   document.getElementById('formCliente').action = "{{ route('clientes.store') }}";
   document.getElementById('methodCliente').innerHTML = '';
   ['f_nombre','f_nit','f_telefono','f_correo','f_contacto','f_direccion'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('f_codigo_tipo_documento').value = '5';
   document.getElementById('modalCliente').classList.add('abierto');
 }
 function editarCliente(c) {
@@ -160,6 +164,7 @@ function editarCliente(c) {
   document.getElementById('methodCliente').innerHTML = '@method("PUT")';
   document.getElementById('f_nombre').value = c.nombre || '';
   document.getElementById('f_nit').value = c.nit || '';
+  document.getElementById('f_codigo_tipo_documento').value = String(c.codigo_tipo_documento || 5);
   document.getElementById('f_telefono').value = c.telefono || '';
   document.getElementById('f_correo').value = c.correo || '';
   document.getElementById('f_contacto').value = c.contacto || '';

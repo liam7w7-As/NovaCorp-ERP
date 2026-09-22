@@ -6,7 +6,12 @@
   <div style="background:var(--gc-rojo-suave); color:var(--gc-rojo); padding:10px 14px; border-radius:6px; font-size:13px; margin-bottom:14px;">{{ session('error') }}</div>
 @endif
 
-<form method="POST" action="{{ $action }}" id="formCompra">
+<form method="POST" action="{{ $action }}" id="formCompra"
+  @if($method === 'POST')
+    data-confirm="Se registrará la compra y aumentará el stock de los productos incluidos. ¿Los datos son correctos?"
+    data-confirm-title="Confirmar compra"
+    data-confirm-label="Registrar compra"
+  @endif>
   @csrf
   @if($method === 'PUT') @method('PUT') @endif
 
@@ -152,8 +157,8 @@ function recalcularCompra() {
 
 document.getElementById('formCompra').addEventListener('submit', function(e) {
   const prov = document.getElementById('c_proveedor').value || document.getElementById('c_proveedorNuevo').value.trim();
-  if (!prov) { e.preventDefault(); alert('Selecciona o escribe un proveedor.'); return; }
-  if (!document.querySelectorAll('#tablaItemsCompra tbody tr').length) { e.preventDefault(); alert('Agrega al menos un producto.'); return; }
+  if (!prov) { e.preventDefault(); GisecaDialog.alert('Selecciona un proveedor registrado o escribe el nombre de uno nuevo.', { titulo: 'Falta el proveedor' }); return; }
+  if (!document.querySelectorAll('#tablaItemsCompra tbody tr').length) { e.preventDefault(); GisecaDialog.alert('Agrega al menos un producto antes de registrar la compra.', { titulo: 'Compra sin productos' }); return; }
 });
 
 recalcularCompra();

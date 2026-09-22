@@ -155,8 +155,8 @@ function recalcularProforma() {
 
 document.getElementById('formProforma').addEventListener('submit', function(e) {
   const cli = document.getElementById('pf_cliente').value || document.getElementById('pf_clienteNuevo').value.trim();
-  if (!cli) { e.preventDefault(); alert('Selecciona o crea un cliente.'); return; }
-  if (!document.querySelectorAll('#tablaProductos tbody tr').length) { e.preventDefault(); alert('Agrega al menos un producto.'); return; }
+  if (!cli) { e.preventDefault(); GisecaDialog.alert('Selecciona un cliente registrado o escribe el nombre de uno nuevo.', { titulo: 'Falta el cliente' }); return; }
+  if (!document.querySelectorAll('#tablaProductos tbody tr').length) { e.preventDefault(); GisecaDialog.alert('Agrega al menos un producto antes de guardar la proforma.', { titulo: 'Proforma sin productos' }); return; }
 });
 
 recalcularProforma();

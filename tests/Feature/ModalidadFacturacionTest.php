@@ -70,7 +70,7 @@ class ModalidadFacturacionTest extends TestCase
     {
         Configuracion::set('siat_modalidad', 'computarizada', 'text');
 
-        $this->assertSame('ServicioFacturacionComputarizada', SiatConfig::servicioFacturacionWsdl());
+        $this->assertSame('ServicioFacturacionCompraVenta', SiatConfig::servicioFacturacionWsdl());
     }
 
     public function test_servicio_wsdl_electronica(): void
@@ -111,5 +111,27 @@ class ModalidadFacturacionTest extends TestCase
         $this->assertStringContainsString('<firmaDigital>', $resultado, 'Simulador electrónica debe incrustar marcador de firma.');
         $this->assertStringContainsString('<modo>SIMULADOR</modo>', $resultado);
         $this->assertStringContainsString('</facturaElectronicaCompraVenta>', $resultado);
+    }
+
+    public function test_archivo_de_recepcion_es_gzip_binario_y_hash_del_comprimido(): void
+    {
+        $service = new class extends SiatService
+        {
+            /**
+             * @return array{archivo: string, hashArchivo: string}
+             */
+            public function preparar(string $xml): array
+            {
+                return $this->prepararArchivoRecepcion($xml);
+            }
+        };
+        $xml = '<?xml version="1.0"?><facturaComputarizadaCompraVenta/>';
+
+        $resultado = $service->preparar($xml);
+
+        $this->assertSame($xml, gzdecode($resultado['archivo']));
+        $this->assertSame(hash('sha256', $resultado['archivo']), $resultado['hashArchivo']);
+        $this->assertNotSame(base64_encode($resultado['archivo']), $resultado['archivo']);
+        $this->assertSame("\x1f\x8b", substr($resultado['archivo'], 0, 2));
     }
 }

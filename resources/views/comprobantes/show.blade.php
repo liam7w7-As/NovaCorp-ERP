@@ -64,7 +64,7 @@
       <span>{{ ucfirst($p->forma_pago) }}@if($p->banco) — {{ $p->banco }}@endif</span>
       <span style="display:flex; gap:8px; align-items:center;"><strong>Bs {{ formatoMoneda($p->monto) }}</strong>
         @if($comprobante->pagos->count() > 1)
-          <form method="POST" action="{{ route('comprobantes.pagos.destroy', [$comprobante, $p]) }}" style="display:inline;" onsubmit="return confirm('¿Quitar esta forma de pago?')">@csrf @method('DELETE')<button class="btn-giseca btn-outline btn-icon btn-sm" style="width:24px;height:24px;"><i class="bi bi-x" style="font-size:11px;"></i></button></form>
+          <form method="POST" action="{{ route('comprobantes.pagos.destroy', [$comprobante, $p]) }}" style="display:inline;" data-confirm="¿Quitar esta forma de pago del comprobante?" data-confirm-title="Quitar forma de pago" data-confirm-label="Quitar" data-confirm-variant="peligro">@csrf @method('DELETE')<button class="btn-giseca btn-outline btn-icon btn-sm"><i class="bi bi-x"></i></button></form>
         @endif
       </span>
     </div>

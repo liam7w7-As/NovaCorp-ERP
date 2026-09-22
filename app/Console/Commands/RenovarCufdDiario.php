@@ -9,8 +9,8 @@ use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 
-#[Signature('siat:renovar-cufd')]
-#[Description('Renueva el CUFD de los puntos de venta activos (vence cada 24h)')]
+#[Signature('siat:renovar-cufd {--forzar : Renueva aunque el CUFD tenga más de una hora de vigencia}')]
+#[Description('Renueva los CUFD ausentes, vencidos o próximos a vencer de los puntos de venta activos')]
 class RenovarCufdDiario extends Command
 {
     public function handle(SiatService $siat): int
@@ -18,10 +18,22 @@ class RenovarCufdDiario extends Command
         $puntos = PuntoVenta::activos()->with('sucursal')->get();
         $ok = 0;
         $fallos = 0;
+        $omitidos = 0;
+        $umbralRenovacion = now()->addHour();
 
         foreach ($puntos as $pv) {
             if (empty($pv->cuis)) {
                 $this->warn("POS {$pv->id} ({$pv->nombre}): sin CUIS, se omite.");
+
+                continue;
+            }
+
+            if (! $this->option('forzar')
+                && $pv->cufd
+                && $pv->cufd_vigencia
+                && $pv->cufd_vigencia->greaterThan($umbralRenovacion)) {
+                $omitidos++;
+                $this->line("POS {$pv->id} ({$pv->nombre}): vigente hasta {$pv->cufd_vigencia->format('d/m/Y H:i')}, se omite.");
 
                 continue;
             }
@@ -41,7 +53,7 @@ class RenovarCufdDiario extends Command
             }
         }
 
-        $this->line("Listo: {$ok} renovado(s), {$fallos} fallo(s).");
+        $this->line("Listo: {$ok} renovado(s), {$omitidos} aún vigente(s), {$fallos} fallo(s).");
 
         return $fallos > 0 ? self::FAILURE : self::SUCCESS;
     }

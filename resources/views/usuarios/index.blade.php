@@ -26,7 +26,7 @@
           <td class="text-end" style="white-space:nowrap;">
             <button class="btn-giseca btn-outline btn-icon btn-sm" title="Editar" onclick='editarUsuario(@json($u))'><i class="bi bi-pencil"></i></button>
             @if($u->id !== auth()->id())
-              <form method="POST" action="{{ route('usuarios.destroy', $u) }}" style="display:inline;" onsubmit="return confirm('¿Eliminar a {{ $u->name }}?')">@csrf @method('DELETE')<button class="btn-giseca btn-outline btn-icon btn-sm" title="Eliminar"><i class="bi bi-trash" style="color:var(--gc-rojo);"></i></button></form>
+              <form method="POST" action="{{ route('usuarios.destroy', $u) }}" style="display:inline;" data-confirm="¿Eliminar al usuario {{ $u->name }}?" data-confirm-title="Eliminar usuario" data-confirm-label="Eliminar" data-confirm-variant="peligro">@csrf @method('DELETE')<button class="btn-giseca btn-outline btn-icon btn-sm" title="Eliminar"><i class="bi bi-trash" style="color:var(--gc-rojo);"></i></button></form>
             @endif
           </td>
         </tr>
@@ -41,7 +41,7 @@
     @foreach($roles as $r)
       <span class="codigo-chip">{{ $r->nombre }}
         @if(!$r->es_sistema)
-          <form method="POST" action="{{ route('roles.destroy', $r) }}" style="display:inline;" onsubmit="return confirm('¿Eliminar el rol {{ $r->nombre }}?')">@csrf @method('DELETE')<button style="border:none; background:none; cursor:pointer; color:var(--gc-rojo);" title="Eliminar rol">×</button></form>
+          <form method="POST" action="{{ route('roles.destroy', $r) }}" style="display:inline;" data-confirm="¿Eliminar el rol {{ $r->nombre }}?" data-confirm-title="Eliminar rol" data-confirm-label="Eliminar" data-confirm-variant="peligro">@csrf @method('DELETE')<button style="border:none; background:none; cursor:pointer; color:var(--gc-rojo);" title="Eliminar rol">×</button></form>
         @else
           <i class="bi bi-lock-fill" style="color:var(--gc-gris-claro);" title="Rol del sistema"></i>
         @endif

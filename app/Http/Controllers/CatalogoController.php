@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\CatalogoSin;
 use App\Services\SiatService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class CatalogoController extends Controller
 {
@@ -38,13 +39,28 @@ class CatalogoController extends Controller
         try {
             foreach ($tipos as $tipo) {
                 $res = $siat->sincronizarCatalogo($tipo);
-                foreach ($res['items'] as $codigo => $descripcion) {
-                    CatalogoSin::updateOrCreate(
-                        ['tipo' => $tipo, 'codigo' => (string) $codigo],
-                        ['descripcion' => (string) $descripcion]
-                    );
-                    $total++;
-                }
+                $items = $res['items'] ?? [];
+                $extras = $res['extras'] ?? [];
+                DB::transaction(function () use ($tipo, $items, $extras, &$total): void {
+                    if ($items !== []) {
+                        CatalogoSin::where('tipo', $tipo)
+                            ->whereNotIn('codigo', array_map('strval', array_keys($items)))
+                            ->delete();
+                    }
+
+                    foreach ($items as $codigo => $descripcion) {
+                        $atributos = ['descripcion' => (string) $descripcion];
+                        if (isset($extras[$codigo]) && $extras[$codigo] !== []) {
+                            $atributos['extra'] = $extras[$codigo];
+                        }
+
+                        CatalogoSin::updateOrCreate(
+                            ['tipo' => $tipo, 'codigo' => (string) $codigo],
+                            $atributos
+                        );
+                        $total++;
+                    }
+                });
             }
         } catch (\Throwable $e) {
             return back()->with('error', 'Falló la sincronización: '.$e->getMessage());
@@ -69,7 +85,16 @@ class CatalogoController extends Controller
                     ->orWhere('descripcion', 'like', "%{$q}%");
             })
             ->limit(15)
-            ->get(['codigo', 'descripcion']);
+            ->get(['codigo', 'descripcion', 'extra'])
+            ->map(function (CatalogoSin $item): array {
+                $extra = is_array($item->extra) ? $item->extra : [];
+
+                return [
+                    'codigo' => $item->codigo,
+                    'descripcion' => $item->descripcion,
+                    'actividad_economica' => $extra['actividad_economica'] ?? null,
+                ];
+            });
 
         return response()->json($items);
     }

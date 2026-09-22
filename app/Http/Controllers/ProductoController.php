@@ -2,15 +2,20 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\CatalogoSin;
 use App\Models\Producto;
+use App\Services\HomologacionProductoService;
 use App\Services\StockService;
 use Illuminate\Database\QueryException;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 use Picqer\Barcode\BarcodeGeneratorHTML;
 
 class ProductoController extends Controller
@@ -36,12 +41,15 @@ class ProductoController extends Controller
             ->orderBy($sort, $dir);
 
         $productos = $query->paginate(50)->withQueryString();
+        $homologacionPendientes = Producto::where(function ($consulta): void {
+            $consulta->whereNull('codigo_sin')->orWhere('codigo_sin', '');
+        })->count();
 
         if ($request->expectsJson() || $request->get('format') === 'json') {
             return response()->json($productos);
         }
 
-        return view('productos.index', compact('productos', 'q', 'sort', 'dir'));
+        return view('productos.index', compact('productos', 'q', 'sort', 'dir', 'homologacionPendientes'));
     }
 
     /**
@@ -71,6 +79,7 @@ class ProductoController extends Controller
             'descripcion' => 'required|string|max:255',
             'unidad' => 'nullable|string|max:20',
             'codigo_sin' => 'nullable|string|max:20',
+            'actividad_economica_sin' => 'nullable|string|max:20',
             'unidad_sin' => 'nullable|string|max:10',
             'costo' => 'nullable|numeric|min:0',
             'precio' => 'nullable|numeric|min:0',
@@ -95,6 +104,7 @@ class ProductoController extends Controller
             'quitar_imagenes',
         ]);
 
+        $atributos = $this->completarHomologacion($atributos);
         $atributos['unidad'] = $atributos['unidad'] ?? 'PZA';
         $atributos['costo'] = $atributos['costo'] ?? 0;
         $atributos['precio'] = $atributos['precio'] ?? 0;
@@ -131,7 +141,7 @@ class ProductoController extends Controller
             'quitar_imagenes',
         ]);
 
-        $producto->update($atributos);
+        $producto->update($this->completarHomologacion($atributos, $producto));
         $this->actualizarAdjuntosProducto($request, $producto->fresh());
 
         return back()->with('exito', 'Producto actualizado');
@@ -143,6 +153,80 @@ class ProductoController extends Controller
         $producto->delete();
 
         return back()->with('exito', 'Producto eliminado');
+    }
+
+    public function sugerenciasHomologacion(HomologacionProductoService $homologacion): JsonResponse
+    {
+        $catalogo = CatalogoSin::where('tipo', 'producto')->get();
+        $productos = Producto::query()
+            ->where(function ($consulta): void {
+                $consulta->whereNull('codigo_sin')->orWhere('codigo_sin', '');
+            })
+            ->orderBy('descripcion')
+            ->limit(200)
+            ->get();
+
+        $items = $productos->map(function (Producto $producto) use ($homologacion, $catalogo): array {
+            return [
+                'id' => $producto->id,
+                'codigo' => $producto->codigo,
+                'descripcion' => $producto->descripcion,
+                'unidad_sin' => $producto->unidad_sin ?: '58',
+                'sugerencias' => $homologacion->sugerencias($producto, $catalogo),
+            ];
+        });
+
+        return response()->json([
+            'items' => $items,
+            'total_pendientes' => Producto::where(function ($consulta): void {
+                $consulta->whereNull('codigo_sin')->orWhere('codigo_sin', '');
+            })->count(),
+            'catalogo_disponible' => $catalogo->isNotEmpty(),
+        ]);
+    }
+
+    public function homologar(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'homologaciones' => 'required|array|min:1|max:200',
+            'homologaciones.*.producto_id' => 'required|integer|distinct|exists:productos,id',
+            'homologaciones.*.codigo_sin' => [
+                'required',
+                'string',
+                Rule::exists('catalogos_sin', 'codigo')->where('tipo', 'producto'),
+            ],
+            'homologaciones.*.unidad_sin' => 'nullable|string|max:10',
+            'homologaciones.*.confianza' => 'nullable|integer|min:0|max:100',
+        ]);
+
+        DB::transaction(function () use ($data): void {
+            foreach ($data['homologaciones'] as $homologacion) {
+                $producto = Producto::whereKey($homologacion['producto_id'])->lockForUpdate()->firstOrFail();
+                $catalogo = CatalogoSin::where('tipo', 'producto')
+                    ->where('codigo', $homologacion['codigo_sin'])
+                    ->firstOrFail();
+                $extra = is_array($catalogo->extra) ? $catalogo->extra : [];
+
+                $producto->update([
+                    'codigo_sin' => (string) $catalogo->codigo,
+                    'actividad_economica_sin' => filled($extra['actividad_economica'] ?? null)
+                        ? (string) $extra['actividad_economica']
+                        : null,
+                    'unidad_sin' => $homologacion['unidad_sin'] ?: ($producto->unidad_sin ?: '58'),
+                    'homologacion_estado' => 'confirmada',
+                    'homologacion_confianza' => $homologacion['confianza'] ?? null,
+                    'homologado_at' => now(),
+                    'homologado_por' => Auth::id(),
+                ]);
+            }
+        });
+
+        $cantidad = count($data['homologaciones']);
+
+        return response()->json([
+            'message' => "{$cantidad} producto(s) homologado(s) correctamente.",
+            'actualizados' => $cantidad,
+        ]);
     }
 
     /**
@@ -361,6 +445,41 @@ class ProductoController extends Controller
         $mensaje = $e->getMessage();
 
         return str_contains($mensaje, 'Duplicate entry') || str_contains($mensaje, 'UNIQUE constraint');
+    }
+
+    /**
+     * @param  array<string, mixed>  $atributos
+     * @return array<string, mixed>
+     */
+    private function completarHomologacion(array $atributos, ?Producto $producto = null): array
+    {
+        $codigo = trim((string) ($atributos['codigo_sin'] ?? ''));
+
+        if ($codigo === '') {
+            $atributos['codigo_sin'] = null;
+            $atributos['actividad_economica_sin'] = null;
+            $atributos['homologacion_estado'] = 'pendiente';
+            $atributos['homologacion_confianza'] = null;
+            $atributos['homologado_at'] = null;
+            $atributos['homologado_por'] = null;
+
+            return $atributos;
+        }
+
+        $catalogo = CatalogoSin::where('tipo', 'producto')->where('codigo', $codigo)->first();
+        $extra = is_array($catalogo?->extra) ? $catalogo->extra : [];
+        $atributos['codigo_sin'] = $codigo;
+        $atributos['actividad_economica_sin'] = trim((string) ($atributos['actividad_economica_sin'] ?? ''))
+            ?: ($extra['actividad_economica'] ?? null);
+        $atributos['homologacion_estado'] = 'confirmada';
+
+        if (! $producto || $producto->codigo_sin !== $codigo || $producto->homologacion_estado !== 'confirmada') {
+            $atributos['homologacion_confianza'] = 100;
+            $atributos['homologado_at'] = now();
+            $atributos['homologado_por'] = Auth::id();
+        }
+
+        return $atributos;
     }
 
     private function actualizarAdjuntosProducto(Request $request, Producto $producto): void

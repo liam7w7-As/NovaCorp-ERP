@@ -50,6 +50,25 @@ class CatalogoTest extends TestCase
         $this->assertGreaterThan(0, CatalogoSin::where('tipo', 'leyenda')->count());
     }
 
+    public function test_sincronizacion_reemplaza_codigos_obsoletos_del_mismo_catalogo(): void
+    {
+        CatalogoSin::create([
+            'tipo' => 'actividad',
+            'codigo' => '9999999',
+            'descripcion' => 'Código obsoleto',
+        ]);
+
+        $this->actingAs($this->admin)->post(route('catalogos.sincronizar'), [
+            'tipo' => 'actividad',
+        ])->assertSessionHas('exito');
+
+        $this->assertDatabaseMissing('catalogos_sin', [
+            'tipo' => 'actividad',
+            'codigo' => '9999999',
+        ]);
+        $this->assertGreaterThan(0, CatalogoSin::where('tipo', 'actividad')->count());
+    }
+
     public function test_busqueda_productos_sin(): void
     {
         // Asegurar que exista al menos un producto

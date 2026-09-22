@@ -10,7 +10,7 @@ class DetalleProforma extends Model
     protected $table = 'detalle_proforma';
 
     protected $fillable = [
-        'proforma_id', 'producto_id', 'codigo_producto', 'descripcion_producto',
+        'proforma_id', 'producto_id', 'codigo_interno', 'codigo_producto', 'descripcion_producto',
         'cantidad', 'precio_unitario', 'subtotal',
     ];
 

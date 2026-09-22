@@ -10,7 +10,13 @@
             <input type="text" id="buscador" name="q" class="form-control-giseca" style="max-width:380px;"
                 placeholder="Buscar por código, equivalente o descripción..." value="{{ $q }}">
         </form>
-        <div style="display:flex; gap:8px;">
+        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+            <button class="btn-giseca btn-outline" onclick="abrirHomologacion()">
+                <i class="bi bi-stars"></i> Homologación asistida
+                @if ($homologacionPendientes > 0)
+                    <span class="homologacion-contador">{{ $homologacionPendientes }}</span>
+                @endif
+            </button>
             <a class="btn-giseca btn-outline" href="{{ route('kardex.index') }}"><i class="bi bi-list-ul"></i> Kardex</a>
             <button class="btn-giseca btn-outline"
                 onclick="document.getElementById('modalExcel').classList.add('abierto')"><i
@@ -72,7 +78,7 @@
                         'clase' => 'text-end',
                         'sort' => $sort ?? 'descripcion',
                         'dir' => $dir ?? 'asc',
-                    ])<th>Ficha</th><th></th>
+                    ])<th>Homologación SIN</th><th>Ficha</th><th></th>
                 </tr>
             </thead>
             <tbody id="tbodyProductos">
@@ -101,6 +107,16 @@
                             @endif
                         </td>
                         <td>
+                            @if ($p->codigo_sin)
+                                <span class="estado estado-aprobada"><i class="bi bi-check-circle"></i> SIN {{ $p->codigo_sin }}</span>
+                                @if ($p->actividad_economica_sin)
+                                    <div class="homologacion-actividad">Actividad {{ $p->actividad_economica_sin }}</div>
+                                @endif
+                            @else
+                                <span class="estado estado-enviada"><i class="bi bi-hourglass-split"></i> Pendiente</span>
+                            @endif
+                        </td>
+                        <td>
                             <div class="producto-adjuntos-tabla">
                                 @if ($p->ficha_tecnica_url)
                                     <a class="producto-adjunto-link" href="{{ $p->ficha_tecnica_url }}" target="_blank"
@@ -123,7 +139,7 @@
                                 onclick="verBarra({{ $p->id }})"><i class="bi bi-upc-scan"></i></button>
                             @can('admin')
                                 <form method="POST" action="{{ route('productos.destroy', $p) }}" style="display:inline;"
-                                    onsubmit="return confirm('¿Eliminar el producto {{ $p->codigo }}?')">
+                                    data-confirm="¿Eliminar el producto {{ $p->codigo }}?" data-confirm-title="Eliminar producto" data-confirm-label="Eliminar" data-confirm-variant="peligro">
                                     @csrf
                                     @method('DELETE')
                                     <button type="submit" class="btn-giseca btn-outline btn-icon btn-sm" title="Eliminar"><i
@@ -134,7 +150,7 @@
                     </tr>
                 @empty
                     <tr>
-                        <td colspan="10" style="text-align:center; color:var(--gc-gris-claro); padding:40px;"><i
+                        <td colspan="11" style="text-align:center; color:var(--gc-gris-claro); padding:40px;"><i
                                 class="bi bi-box-seam"
                                 style="font-size:30px; display:block; margin-bottom:8px; opacity:.5;"></i>Sin productos
                             registrados.</td>
@@ -199,7 +215,7 @@
                         <div><label class="form-label-giseca">Unidad</label><input class="form-control-giseca"
                                 id="f_unidad" name="unidad" value="PZA"></div>
                     </div>
-                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:10px;">
+                    <div class="producto-homologacion-grid">
                         <div style="position:relative;"><label class="form-label-giseca">Código SIN <i
                                     class="bi bi-info-circle"
                                     title="Escribe para buscar en el catálogo oficial SIN"></i></label><input
@@ -209,6 +225,9 @@
                                 style="position:absolute; background:var(--gc-superficie); border:1px solid var(--gc-borde); border-radius:8px; box-shadow:0 10px 30px rgba(0,0,0,.12); width:100%; max-height:200px; overflow-y:auto; z-index:60; margin-top:4px;">
                             </div>
                         </div>
+                        <div><label class="form-label-giseca">Actividad económica SIN</label><input
+                                class="form-control-giseca" id="f_actividadSin" name="actividad_economica_sin"
+                                placeholder="Se completa desde el catálogo" readonly></div>
                         <div style="position:relative;"><label class="form-label-giseca">Unidad SIN <i
                                     class="bi bi-info-circle"
                                     title="Escribe para buscar unidad oficial (ej: 58 unidad, 6 caja, 22 kg)"></i></label><input
@@ -250,9 +269,32 @@
                         <button type="submit" class="btn-giseca btn-primario">Guardar</button>
                         <button type="button" class="btn-giseca btn-outline" onclick="cerrarModal()">Cancelar</button>
                     </div>
+                </div>
             </form>
         </div>
     </div>
+
+    <div class="modal-giseca" id="modalHomologacion">
+        <div class="modal-box homologacion-modal">
+            <div class="homologacion-cabecera">
+                <div>
+                    <h6><i class="bi bi-stars" style="color:var(--gc-primario);"></i> Homologación asistida</h6>
+                    <p>El sistema propone coincidencias del catálogo SIN. Revisa la sugerencia antes de aprobarla.</p>
+                </div>
+                <button type="button" class="btn-giseca btn-outline btn-icon" onclick="cerrarHomologacion()" title="Cerrar"><i class="bi bi-x-lg"></i></button>
+            </div>
+            <div id="homologacionResumen" class="homologacion-resumen"></div>
+            <div class="homologacion-scroll">
+                <table class="tabla-giseca homologacion-tabla">
+                    <thead><tr><th></th><th>Producto interno</th><th>Sugerencia SIN</th><th>Confianza</th><th>Unidad SIN</th></tr></thead>
+                    <tbody id="homologacionFilas"></tbody>
+                </table>
+            </div>
+            <div class="homologacion-acciones">
+                <button type="button" class="btn-giseca btn-outline" onclick="cerrarHomologacion()">Cancelar</button>
+                <button type="button" class="btn-giseca btn-primario" id="btnAplicarHomologacion" onclick="aplicarHomologacion()"><i class="bi bi-check2-circle"></i> Aprobar seleccionados</button>
+            </div>
+        </div>
     </div>
 
     <!-- Modal Importar Excel -->
@@ -303,7 +345,7 @@
 
 @push('styles')
     <style>
-        .productos-scroll{overflow-x:auto}.productos-scroll .tabla-giseca{min-width:1120px}.producto-stock-detalle{font-size:10.5px;color:var(--gc-gris);font-weight:600;white-space:nowrap}.producto-adjuntos-tabla{display:flex;flex-direction:column;align-items:flex-start;gap:4px;min-width:82px}.producto-adjunto-link{display:inline-flex;align-items:center;gap:4px;color:var(--gc-info);font-size:11px;font-weight:700;text-decoration:none}.producto-adjunto-link i{font-size:13px}.producto-adjunto-vacio{font-size:10.5px;color:var(--gc-gris-claro)}.producto-adjuntos-form{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px;border:1px solid var(--gc-borde);border-radius:7px;padding:12px;background:var(--gc-fondo)}.producto-adjunto-actual,.producto-imagenes-actuales{display:grid;gap:6px;margin-top:8px}.producto-archivo-actual{display:flex;align-items:center;justify-content:space-between;gap:8px;border:1px solid var(--gc-borde);border-radius:6px;padding:8px;background:var(--gc-superficie);font-size:11.5px}.producto-archivo-actual a{color:var(--gc-info);font-weight:700;text-decoration:none;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.producto-archivo-actual label{display:flex;align-items:center;gap:5px;color:var(--gc-rojo);font-size:10.5px;white-space:nowrap}.producto-imagen-chip{display:grid;grid-template-columns:34px minmax(0,1fr) auto;align-items:center;gap:8px;border:1px solid var(--gc-borde);border-radius:6px;padding:6px;background:var(--gc-superficie)}.producto-imagen-chip img{width:34px;height:34px;object-fit:cover;border-radius:5px;background:var(--gc-fondo)}.producto-imagen-chip a{color:var(--gc-texto);font-size:11px;text-decoration:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.producto-imagen-chip label{display:flex;align-items:center;gap:5px;color:var(--gc-rojo);font-size:10.5px;white-space:nowrap}@media(max-width:760px){.producto-adjuntos-form{grid-template-columns:1fr}.modal-box{width:min(96vw,680px)}}
+        .productos-scroll{overflow-x:auto}.productos-scroll .tabla-giseca{min-width:1260px}.producto-stock-detalle{font-size:10.5px;color:var(--gc-gris);font-weight:600;white-space:nowrap}.producto-adjuntos-tabla{display:flex;flex-direction:column;align-items:flex-start;gap:4px;min-width:82px}.producto-adjunto-link{display:inline-flex;align-items:center;gap:4px;color:var(--gc-info);font-size:11px;font-weight:700;text-decoration:none}.producto-adjunto-link i{font-size:13px}.producto-adjunto-vacio{font-size:10.5px;color:var(--gc-gris-claro)}.producto-adjuntos-form{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px;border:1px solid var(--gc-borde);border-radius:7px;padding:12px;background:var(--gc-fondo)}.producto-adjunto-actual,.producto-imagenes-actuales{display:grid;gap:6px;margin-top:8px}.producto-archivo-actual{display:flex;align-items:center;justify-content:space-between;gap:8px;border:1px solid var(--gc-borde);border-radius:6px;padding:8px;background:var(--gc-superficie);font-size:11.5px}.producto-archivo-actual a{color:var(--gc-info);font-weight:700;text-decoration:none;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.producto-archivo-actual label{display:flex;align-items:center;gap:5px;color:var(--gc-rojo);font-size:10.5px;white-space:nowrap}.producto-imagen-chip{display:grid;grid-template-columns:34px minmax(0,1fr) auto;align-items:center;gap:8px;border:1px solid var(--gc-borde);border-radius:6px;padding:6px;background:var(--gc-superficie)}.producto-imagen-chip img{width:34px;height:34px;object-fit:cover;border-radius:5px;background:var(--gc-fondo)}.producto-imagen-chip a{color:var(--gc-texto);font-size:11px;text-decoration:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.producto-imagen-chip label{display:flex;align-items:center;gap:5px;color:var(--gc-rojo);font-size:10.5px;white-space:nowrap}.producto-homologacion-grid{display:grid;grid-template-columns:1.2fr 1fr 1fr;gap:10px;margin-top:10px}.homologacion-contador{display:inline-flex;align-items:center;justify-content:center;min-width:21px;height:21px;padding:0 6px;border-radius:10px;background:var(--gc-primario);color:#fff;font-size:11px}.homologacion-actividad{font-size:10.5px;color:var(--gc-gris);margin-top:3px}.homologacion-modal{max-width:980px!important}.homologacion-cabecera{display:flex;align-items:flex-start;justify-content:space-between;gap:14px}.homologacion-cabecera h6{font-size:18px}.homologacion-cabecera p{margin:5px 0 0;color:var(--gc-gris);font-size:12.5px}.homologacion-resumen{margin:16px 0 10px;padding:10px 12px;border-radius:6px;background:var(--gc-info-suave);color:var(--gc-info);font-size:12.5px}.homologacion-scroll{overflow-x:auto;max-height:54vh}.homologacion-tabla{min-width:820px}.homologacion-tabla select{min-width:320px}.homologacion-producto strong{display:block}.homologacion-producto small,.homologacion-opcion small{display:block;color:var(--gc-gris)}.homologacion-confianza{font-weight:700;white-space:nowrap}.homologacion-confianza.alta{color:var(--gc-verde)}.homologacion-confianza.media{color:var(--gc-amarillo)}.homologacion-confianza.baja{color:var(--gc-rojo)}.homologacion-acciones{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}@media(max-width:760px){.producto-adjuntos-form,.producto-homologacion-grid{grid-template-columns:1fr}.modal-box{width:min(96vw,680px)}.homologacion-modal{padding:18px!important}.homologacion-acciones{display:grid}.homologacion-acciones .btn-giseca{width:100%}}
     </style>
 @endpush
 
@@ -347,7 +389,7 @@
             document.getElementById('modalTitulo').textContent = 'Nuevo Producto';
             document.getElementById('formProducto').action = "{{ route('productos.store') }}";
             document.getElementById('methodContainer').innerHTML = '';
-            ['f_codigo', 'f_equivalente', 'f_descripcion', 'f_marca', 'f_codigoSin', 'f_unidadSin'].forEach(id => document
+            ['f_codigo', 'f_equivalente', 'f_descripcion', 'f_marca', 'f_codigoSin', 'f_actividadSin', 'f_unidadSin'].forEach(id => document
                 .getElementById(id).value = '');
             document.getElementById('f_unidad').value = 'PZA';
             ['f_costo', 'f_precio', 'f_stock', 'f_stockMin'].forEach(id => document.getElementById(id).value = 0);
@@ -368,6 +410,7 @@
             document.getElementById('f_marca').value = p.marca || '';
             document.getElementById('f_unidad').value = p.unidad || 'PZA';
             document.getElementById('f_codigoSin').value = p.codigo_sin || '';
+            document.getElementById('f_actividadSin').value = p.actividad_economica_sin || '';
             document.getElementById('f_unidadSin').value = p.unidad_sin || '';
             document.getElementById('f_costo').value = p.costo ?? 0;
             document.getElementById('f_precio').value = p.precio ?? 0;
@@ -420,6 +463,7 @@
 
             inp.addEventListener('input', function() {
                 clearTimeout(t);
+                document.getElementById('f_actividadSin').value = '';
                 const q = this.value.trim();
                 if (q.length < 2) {
                     box.innerHTML = '';
@@ -435,12 +479,13 @@
                             });
                         const lista = await r.json();
                         box.innerHTML = lista.map(p =>
-                                `<div class="item" data-cod="${p.codigo}" style="padding:8px 12px; cursor:pointer; border-bottom:1px solid var(--gc-borde); font-size:12.5px;"><strong>${p.codigo}</strong> — ${p.descripcion}</div>`
+                                `<div class="item" data-cod="${p.codigo}" data-act="${p.actividad_economica || ''}" style="padding:8px 12px; cursor:pointer; border-bottom:1px solid var(--gc-borde); font-size:12.5px;"><strong>${p.codigo}</strong> — ${p.descripcion}${p.actividad_economica ? `<small style="display:block;color:var(--gc-gris);">Actividad ${p.actividad_economica}</small>` : ''}</div>`
                             ).join('') ||
                             '<div style="padding:8px 12px; font-size:12px; color:var(--gc-gris);">Sin resultados. Puedes escribir el código manual.</div>';
                         box.querySelectorAll('.item[data-cod]').forEach(el => {
                             el.addEventListener('click', () => {
                                 inp.value = el.dataset.cod;
+                                document.getElementById('f_actividadSin').value = el.dataset.act || '';
                                 box.innerHTML = '';
                                 if (inpUnidad && !inpUnidad.value) inpUnidad.value =
                                     '58';
@@ -488,6 +533,128 @@
                     boxUnidad.innerHTML = '';
             });
         })();
+
+        let homologacionesDisponibles = [];
+
+        async function abrirHomologacion() {
+            const modal = document.getElementById('modalHomologacion');
+            const filas = document.getElementById('homologacionFilas');
+            const resumen = document.getElementById('homologacionResumen');
+            modal.classList.add('abierto');
+            filas.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:28px;color:var(--gc-gris);"><i class="bi bi-arrow-repeat"></i> Analizando productos pendientes...</td></tr>';
+            resumen.textContent = 'Preparando propuestas a partir del catálogo sincronizado.';
+
+            try {
+                const respuesta = await fetch(@json(route('productos.homologacion.sugerencias')), {
+                    headers: { 'Accept': 'application/json' }
+                });
+                if (!respuesta.ok) throw new Error('No se pudieron obtener las sugerencias.');
+                const datos = await respuesta.json();
+                homologacionesDisponibles = datos.items || [];
+                pintarSugerenciasHomologacion(datos);
+            } catch (error) {
+                filas.innerHTML = `<tr><td colspan="5" style="text-align:center;padding:28px;color:var(--gc-rojo);">${escaparHtml(error.message)}</td></tr>`;
+                resumen.textContent = 'No fue posible analizar el catálogo.';
+            }
+        }
+
+        function cerrarHomologacion() {
+            document.getElementById('modalHomologacion').classList.remove('abierto');
+        }
+
+        function pintarSugerenciasHomologacion(datos) {
+            const filas = document.getElementById('homologacionFilas');
+            const resumen = document.getElementById('homologacionResumen');
+            const items = datos.items || [];
+
+            if (!datos.catalogo_disponible) {
+                resumen.textContent = 'Primero sincroniza el catálogo de Productos / servicios SIN desde Catálogos SIN.';
+                filas.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:28px;color:var(--gc-gris);">No hay catálogo SIN disponible.</td></tr>';
+                return;
+            }
+
+            resumen.textContent = `${datos.total_pendientes} producto(s) pendiente(s). Las coincidencias altas aparecen seleccionadas; las demás requieren revisión manual.`;
+            if (!items.length) {
+                filas.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:28px;color:var(--gc-verde);"><i class="bi bi-check-circle"></i> Todos los productos están homologados.</td></tr>';
+                return;
+            }
+
+            filas.innerHTML = items.map(item => {
+                const principal = item.sugerencias[0] || null;
+                const opciones = item.sugerencias.map(s =>
+                    `<option value="${s.codigo}">${s.codigo} — ${escaparHtml(s.descripcion)}${s.actividad_economica ? ` · Act. ${s.actividad_economica}` : ''}</option>`
+                ).join('');
+                const seleccionada = principal && principal.confianza >= 70 ? 'checked' : '';
+                const deshabilitada = principal ? '' : 'disabled';
+
+                return `<tr data-producto="${item.id}">
+                    <td><input type="checkbox" class="homologacion-check" ${seleccionada} ${deshabilitada}></td>
+                    <td class="homologacion-producto"><strong>${escaparHtml(item.descripcion)}</strong><small>${escaparHtml(item.codigo)}</small></td>
+                    <td>${principal ? `<select class="form-control-giseca homologacion-select" onchange="actualizarConfianzaHomologacion(${item.id})">${opciones}</select>` : '<span style="color:var(--gc-gris);">Sin coincidencia suficiente. Edita el producto manualmente.</span>'}</td>
+                    <td>${principal ? `<span class="homologacion-confianza ${principal.nivel}">${principal.confianza}% · ${principal.nivel}</span>` : '—'}</td>
+                    <td><input class="form-control-giseca homologacion-unidad" value="${escaparHtml(item.unidad_sin || '58')}" style="width:86px;" ${deshabilitada}></td>
+                </tr>`;
+            }).join('');
+        }
+
+        function actualizarConfianzaHomologacion(productoId) {
+            const item = homologacionesDisponibles.find(p => p.id === productoId);
+            const fila = document.querySelector(`tr[data-producto="${productoId}"]`);
+            const codigo = fila.querySelector('.homologacion-select').value;
+            const sugerencia = item.sugerencias.find(s => s.codigo === codigo);
+            const etiqueta = fila.querySelector('.homologacion-confianza');
+            etiqueta.className = `homologacion-confianza ${sugerencia.nivel}`;
+            etiqueta.textContent = `${sugerencia.confianza}% · ${sugerencia.nivel}`;
+        }
+
+        async function aplicarHomologacion() {
+            const homologaciones = Array.from(document.querySelectorAll('#homologacionFilas tr[data-producto]'))
+                .filter(fila => fila.querySelector('.homologacion-check')?.checked)
+                .map(fila => {
+                    const productoId = Number(fila.dataset.producto);
+                    const codigoSin = fila.querySelector('.homologacion-select').value;
+                    const item = homologacionesDisponibles.find(p => p.id === productoId);
+                    const sugerencia = item.sugerencias.find(s => s.codigo === codigoSin);
+                    return {
+                        producto_id: productoId,
+                        codigo_sin: codigoSin,
+                        unidad_sin: fila.querySelector('.homologacion-unidad').value || '58',
+                        confianza: sugerencia.confianza
+                    };
+                });
+
+            if (!homologaciones.length) {
+                await GisecaDialog.alert('Selecciona al menos una sugerencia para aprobar.', { titulo: 'Sin productos seleccionados' });
+                return;
+            }
+
+            const confirmado = await GisecaDialog.confirm(
+                `Se guardará la homologación SIN de ${homologaciones.length} producto(s). ¿Revisaste las equivalencias propuestas?`,
+                { titulo: 'Aprobar homologación', confirmar: 'Guardar homologaciones' }
+            );
+            if (!confirmado) return;
+
+            const boton = document.getElementById('btnAplicarHomologacion');
+            boton.disabled = true;
+            try {
+                const respuesta = await fetch(@json(route('productos.homologacion.store')), {
+                    method: 'POST',
+                    headers: {
+                        'Accept': 'application/json',
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': @json(csrf_token())
+                    },
+                    body: JSON.stringify({ homologaciones })
+                });
+                const datos = await respuesta.json();
+                if (!respuesta.ok) throw new Error(datos.message || 'No se pudieron guardar las homologaciones.');
+                mostrarToast(datos.message, 'exito');
+                window.location.reload();
+            } catch (error) {
+                boton.disabled = false;
+                await GisecaDialog.alert(error.message, { titulo: 'No se guardó la homologación', variante: 'peligro' });
+            }
+        }
 
         function verBarra(id) {
             fetch('/productos/' + id + '/codigo-barra', {

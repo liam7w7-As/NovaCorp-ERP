@@ -127,7 +127,8 @@
                                         href="{{ route('almacen.notas.imprimir', $nota) }}"><i class="bi bi-printer"></i></a>
                                     @if ($nota->estado === 'emitida')
                                         <form method="POST" action="{{ route('almacen.notas.anular', $nota) }}" style="display:inline;"
-                                            onsubmit="return confirm('¿Anular la nota {{ $nota->numero }}? La entrega volverá a quedar reservada.')">
+                                            data-confirm="¿Anular la nota {{ $nota->numero }}? La entrega volverá a quedar reservada."
+                                            data-confirm-title="Anular nota de entrega" data-confirm-label="Anular nota" data-confirm-variant="peligro">
                                             @csrf
                                             <button class="btn-giseca btn-outline btn-icon btn-sm" title="Anular"><i class="bi bi-x-circle"></i></button>
                                         </form>

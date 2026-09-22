@@ -140,6 +140,7 @@ class ProformaController extends Controller
             foreach ($items as $it) {
                 $p->detalles()->create([
                     'producto_id' => $it['producto']->id,
+                    'codigo_interno' => $it['producto']->codigo_interno,
                     'codigo_producto' => $it['producto']->codigo,
                     'descripcion_producto' => $it['producto']->descripcion,
                     'cantidad' => $it['cantidad'],
@@ -226,6 +227,7 @@ class ProformaController extends Controller
             foreach ($items as $it) {
                 $proforma->detalles()->create([
                     'producto_id' => $it['producto']->id,
+                    'codigo_interno' => $it['producto']->codigo_interno,
                     'codigo_producto' => $it['producto']->codigo,
                     'descripcion_producto' => $it['producto']->descripcion,
                     'cantidad' => $it['cantidad'],

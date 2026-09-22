@@ -53,6 +53,21 @@
     width: 100%;
     height: 300px;
   }
+
+  .siat-eventos-scroll { overflow-x:auto; }
+  .siat-eventos { min-width:920px; }
+  .siat-eventos td { vertical-align:top!important; }
+  .siat-servicio strong { display:block; margin-bottom:3px; }
+  .siat-servicio code { color:var(--gc-gris); font-size:11px; }
+  .siat-contexto { display:flex; flex-wrap:wrap; gap:5px; max-width:310px; }
+  .siat-contexto span { background:var(--gc-fondo); border:1px solid var(--gc-borde); border-radius:4px; padding:3px 6px; font-size:11.5px; }
+  .siat-respuesta { max-width:330px; }
+  .siat-respuesta strong { display:block; margin-bottom:3px; }
+  .siat-respuesta small { display:block; color:var(--gc-gris); overflow-wrap:anywhere; }
+  .siat-detalle summary { color:var(--gc-primario-oscuro); cursor:pointer; font-weight:700; white-space:nowrap; }
+  .siat-detalle-contenido { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:8px; width:620px; }
+  .siat-detalle-contenido pre { background:var(--gc-fondo); border:1px solid var(--gc-borde); border-radius:6px; color:var(--gc-texto); font-size:10.5px; margin:4px 0 0; max-height:220px; overflow:auto; padding:9px; white-space:pre-wrap; word-break:break-word; }
+  @media(max-width:760px) { .siat-detalle-contenido { grid-template-columns:1fr; width:360px; max-width:80vw; } }
 </style>
 @endpush
 
@@ -204,7 +219,7 @@ object-fit:contain;
 
         class="btn-giseca btn-outline btn-sm"
 
-        onclick="return confirm('¿Quitar logo?')">
+        data-confirm="¿Quitar el logo actual del sistema?" data-confirm-title="Quitar logo" data-confirm-label="Quitar" data-confirm-variant="peligro">
 
         Quitar logo
 
@@ -249,7 +264,7 @@ object-fit:contain;
           @csrf
           <input type="hidden" name="empresa_nombre" value="{{ $empresa['nombre'] }}">
           <input type="hidden" name="quitar_membretado" value="1">
-          <button class="btn-giseca btn-outline btn-sm" onclick="return confirm('¿Quitar el membretado?')">Quitar</button>
+          <button class="btn-giseca btn-outline btn-sm" data-confirm="¿Quitar el membretado actual de los documentos?" data-confirm-title="Quitar membretado" data-confirm-label="Quitar" data-confirm-variant="peligro">Quitar</button>
         </form>
       </div>
     </div>
@@ -291,7 +306,7 @@ object-fit:contain;
         <div>💰 Ventas: <strong>{{ $conteos['ventas'] }}</strong></div>
         <div>🧾 Comprobantes: <strong>{{ $conteos['comprobantes'] }}</strong></div>
       </div>
-      <form method="POST" action="{{ route('configuracion.resetear') }}" onsubmit="return confirm('Esto borrará TODOS los datos (productos, clientes, compras, ventas, etc.) y los reiniciará con datos de ejemplo. ¿Continuar?')">
+      <form method="POST" action="{{ route('configuracion.resetear') }}" data-confirm="Esto borrará TODOS los datos operativos y los reiniciará con datos de ejemplo. Esta acción no se puede deshacer." data-confirm-title="Reiniciar todos los datos" data-confirm-label="Reiniciar sistema" data-confirm-variant="peligro">
         @csrf
         <div style="display:flex; gap:8px; margin-top:14px; align-items:center; flex-wrap:wrap;">
           <input name="confirmacion" class="form-control-giseca" placeholder="Escribe REINICIAR para confirmar" style="max-width:220px;" required>
@@ -331,6 +346,18 @@ object-fit:contain;
       </div>
       <div><label class="form-label-giseca">NIT emisor *</label><input name="siat_nit" class="form-control-giseca" value="{{ old('siat_nit', $siat['nit']) }}" required></div>
       <div><label class="form-label-giseca">Razón social *</label><input name="siat_razon_social" class="form-control-giseca" value="{{ old('siat_razon_social', $siat['razon_social']) }}" required></div>
+      <div><label class="form-label-giseca">Actividad económica SIN</label>
+        @if($actividadesSiat->isNotEmpty())
+        <select name="siat_actividad_economica" class="form-control-giseca">
+          <option value="">— Seleccionar —</option>
+          @foreach($actividadesSiat as $actividad)
+          <option value="{{ $actividad->codigo }}" {{ old('siat_actividad_economica', $siat['actividad_economica']) === $actividad->codigo ? 'selected' : '' }}>{{ $actividad->codigo }} — {{ $actividad->descripcion }}</option>
+          @endforeach
+        </select>
+        @else
+        <input name="siat_actividad_economica" class="form-control-giseca" value="{{ old('siat_actividad_economica', $siat['actividad_economica']) }}" placeholder="Sincroniza actividades y selecciona el código autorizado">
+        @endif
+      </div>
       <div><label class="form-label-giseca">Código de sistema</label><input name="siat_codigo_sistema" class="form-control-giseca" value="{{ old('siat_codigo_sistema', $siat['codigo_sistema']) }}"></div>
       <div><label class="form-label-giseca">Sucursal</label><input name="siat_sucursal" class="form-control-giseca" value="{{ old('siat_sucursal', $siat['sucursal']) }}"></div>
       <div><label class="form-label-giseca">Punto de venta</label><input name="siat_punto_venta" class="form-control-giseca" value="{{ old('siat_punto_venta', $siat['punto_venta']) }}"></div>
@@ -371,27 +398,71 @@ object-fit:contain;
 
 @if($eventos->count())
 <div class="card-giseca" style="margin-top:18px; padding:0; overflow:hidden;">
-  <div style="padding:14px 18px 0;">
+  <div style="padding:16px 18px 10px; border-bottom:1px solid var(--gc-borde);">
     <h6 style="margin:0;">Últimas comunicaciones con el SIN</h6>
+    <p style="margin:5px 0 0; color:var(--gc-gris); font-size:12.5px;">Últimos 10 procesos técnicos realizados. Abre el detalle para revisar exactamente qué se envió y qué respondió el servicio.</p>
   </div>
-  <table class="tabla-giseca">
+  <div class="siat-eventos-scroll">
+  <table class="tabla-giseca siat-eventos">
     <thead>
       <tr>
-        <th>Método</th>
-        <th>Fecha</th>
-        <th>Resultado</th>
+        <th>Servicio / proceso</th>
+        <th>Fecha y hora</th>
+        <th>Contexto enviado</th>
+        <th>Respuesta</th>
+        <th>Estado</th>
+        <th></th>
       </tr>
     </thead>
     <tbody>
       @foreach($eventos as $ev)
+      @php
+        $parametrosEvento = $ev->parametrosDecodificados();
+        $solicitudEvento = is_array($parametrosEvento['solicitud'] ?? null) ? $parametrosEvento['solicitud'] : [];
+        $respuestaEvento = $ev->respuestaDecodificada();
+        $resumenEvento = $ev->resumenRespuesta();
+      @endphp
       <tr>
-        <td><span class="codigo-chip">{{ $ev->metodo }}</span></td>
-        <td>{{ $ev->fecha->format('Y-m-d H:i') }}</td>
-        <td><span class="estado {{ $ev->exitoso ? 'estado-aprobada' : 'estado-rechazada' }}">{{ $ev->exitoso ? 'OK' : 'FALLO' }}</span></td>
+        <td class="siat-servicio">
+          <strong>{{ $ev->nombreMetodo() }}</strong>
+          <code>{{ $ev->metodo }}</code>
+        </td>
+        <td style="white-space:nowrap;">
+          {{ $ev->fecha->format('d/m/Y H:i:s') }}
+          <div style="font-size:11.5px; color:var(--gc-gris);">{{ $ev->fecha->diffForHumans() }}</div>
+        </td>
+        <td>
+          <div class="siat-contexto">
+            @if(isset($solicitudEvento['codigoAmbiente']))<span>Ambiente: {{ (int) $solicitudEvento['codigoAmbiente'] === 1 ? 'Producción' : 'Pruebas' }}</span>@endif
+            @if(isset($solicitudEvento['codigoModalidad']))<span>Modalidad: {{ $solicitudEvento['codigoModalidad'] }}</span>@endif
+            @if(isset($parametrosEvento['numeroFactura']))<span>Factura: {{ $parametrosEvento['numeroFactura'] }}</span>@endif
+            @if(isset($parametrosEvento['archivo_bytes']))<span>Archivo: {{ number_format((int) $parametrosEvento['archivo_bytes']) }} bytes</span>@endif
+            @if(isset($parametrosEvento['cantidad']))<span>Facturas: {{ $parametrosEvento['cantidad'] }}</span>@endif
+            @if(isset($parametrosEvento['cuf']))<span title="{{ $parametrosEvento['cuf'] }}">CUF: {{ \Illuminate\Support\Str::limit($parametrosEvento['cuf'], 20) }}</span>@endif
+            @if(isset($parametrosEvento['tipo']))<span>Catálogo: {{ $parametrosEvento['tipo'] }}</span>@endif
+            @if(empty($parametrosEvento))<span>Sin parámetros registrados</span>@endif
+          </div>
+        </td>
+        <td class="siat-respuesta">
+          <strong>{{ $resumenEvento['descripcion'] }}</strong>
+          @if($resumenEvento['codigo_estado'])<small>Código de estado SIN: {{ $resumenEvento['codigo_estado'] }}</small>@endif
+          @if($resumenEvento['codigo_recepcion'])<small>Recepción: {{ $resumenEvento['codigo_recepcion'] }}</small>@endif
+        </td>
+        <td><span class="estado {{ $ev->exitoso ? 'estado-aprobada' : 'estado-rechazada' }}">{{ $ev->exitoso ? 'Correcto' : 'Falló' }}</span></td>
+        <td>
+          <details class="siat-detalle">
+            <summary>Detalle técnico</summary>
+            <div class="siat-detalle-contenido">
+              <div><strong>Parámetros enviados</strong><pre>{{ json_encode($parametrosEvento, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) }}</pre></div>
+              <div><strong>Respuesta recibida</strong><pre>{{ json_encode($respuestaEvento, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) }}</pre></div>
+            </div>
+          </details>
+        </td>
       </tr>
       @endforeach
     </tbody>
   </table>
+  </div>
 </div>
 @endif
 @endsection

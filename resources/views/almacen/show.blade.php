@@ -24,7 +24,10 @@
         <div class="alerta-giseca alerta-error">{{ $errors->first() }}</div>
     @endif
 
-    <form method="POST" action="{{ route('almacen.entregar', $venta) }}" class="card-giseca entrega-card">
+    <form method="POST" action="{{ route('almacen.entregar', $venta) }}" class="card-giseca entrega-card"
+        data-confirm="Se descontarán del almacén las cantidades indicadas y se emitirá una nota de entrega. ¿Deseas continuar?"
+        data-confirm-title="Confirmar entrega"
+        data-confirm-label="Emitir nota">
         @csrf
         <div class="entrega-form-grid">
             <div>
