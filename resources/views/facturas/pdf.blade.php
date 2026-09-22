@@ -29,6 +29,9 @@
 <table class="header">
   <tr>
     <td style="width: 60%;">
+      @if(! empty($logoPath ?? null))
+        <img src="{{ $logoPath }}" width="90" alt="Logo" style="display:block; margin-bottom:4px;">
+      @endif
       <div class="empresa">{{ $empresa['nombre'] ?? 'GISECA SRL' }}</div>
       <div><strong>NIT:</strong> {{ \App\Services\SiatConfig::get('siat_nit', '—') }}</div>
       @if($factura->sucursal)
