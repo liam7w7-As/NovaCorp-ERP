@@ -32,6 +32,8 @@ class CanalWhatsapp extends Model
         'meta_code_verification_status',
         'access_token',
         'graph_version',
+        'plantilla_nombre',
+        'plantilla_idioma',
         'estado',
         'webhook_suscrito_at',
         'meta_verificado_at',

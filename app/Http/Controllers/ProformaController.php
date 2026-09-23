@@ -7,6 +7,7 @@ use App\Models\Configuracion;
 use App\Models\Producto;
 use App\Models\Proforma;
 use App\Services\ProformaService;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -75,6 +76,7 @@ class ProformaController extends Controller
             'nota' => 'nullable|string',
             'reserva_stock' => 'nullable|boolean',
             'descuento' => 'nullable|numeric|min:0',
+            'descuento_tipo' => 'nullable|in:fijo,porcentaje',
             'items' => 'required|array|min:1',
             'items.*.producto_id' => 'required|exists:productos,id',
             'items.*.cantidad' => 'required|numeric|min:0.01',
@@ -114,7 +116,8 @@ class ProformaController extends Controller
             }
             $totales = $proformas->calcularTotales(
                 array_map(fn ($i) => ['cantidad' => $i['cantidad'], 'precio' => $i['precio']], $items),
-                (float) ($data['descuento'] ?? 0)
+                (float) ($data['descuento'] ?? 0),
+                $data['descuento_tipo'] ?? null
             );
 
             $p = Proforma::create([
@@ -126,6 +129,7 @@ class ProformaController extends Controller
                 'estado' => 'borrador',
                 'subtotal' => $totales['subtotal'],
                 'descuento' => $totales['descuento'],
+                'descuento_tipo' => $totales['descuento_tipo'],
                 'total' => $totales['total'],
                 'nota' => $request->input('nota'),
                 'reserva_stock' => (bool) $request->input('reserva_stock', false),
@@ -167,6 +171,33 @@ class ProformaController extends Controller
         ]);
     }
 
+    /**
+     * PDF oficial para abrir en pestaña (inline, sin descargar).
+     */
+    public function pdf(Proforma $proforma)
+    {
+        $proforma->load('detalles.producto', 'cliente');
+
+        $logo = Configuracion::logo();
+        $logoPath = public_path($logo['path'] ?? 'images/logo.png');
+        if (! is_file($logoPath) && ! empty($logo['path']) && ! str_contains($logo['path'], '..')) {
+            $candidato = storage_path('app/public/'.$logo['path']);
+            if (is_file($candidato)) {
+                $logoPath = $candidato;
+            }
+        }
+
+        $pdf = Pdf::loadView('proformas.pdf', [
+            'proforma' => $proforma,
+            'empresa' => Configuracion::empresa(),
+            'logoPath' => is_file($logoPath) ? $logoPath : null,
+        ]);
+        $pdf->setOption('isRemoteEnabled', true);
+        $pdf->setPaper('letter');
+
+        return $pdf->stream($proforma->numero.'.pdf');
+    }
+
     public function edit(Proforma $proforma)
     {
         if ($proforma->esta_convertida) {
@@ -203,7 +234,8 @@ class ProformaController extends Controller
             }
             $totales = $proformas->calcularTotales(
                 array_map(fn ($i) => ['cantidad' => $i['cantidad'], 'precio' => $i['precio']], $items),
-                (float) ($data['descuento'] ?? 0)
+                (float) ($data['descuento'] ?? 0),
+                $data['descuento_tipo'] ?? null
             );
 
             $proforma->update([
@@ -213,6 +245,7 @@ class ProformaController extends Controller
                 'cliente_nombre' => $cliente->nombre,
                 'subtotal' => $totales['subtotal'],
                 'descuento' => $totales['descuento'],
+                'descuento_tipo' => $totales['descuento_tipo'],
                 'total' => $totales['total'],
                 'nota' => $request->input('nota'),
                 'reserva_stock' => (bool) $request->input('reserva_stock', false),
@@ -301,6 +334,7 @@ class ProformaController extends Controller
             ->when($q, function ($query) use ($q) {
                 $query->where(function ($sub) use ($q) {
                     $sub->where('codigo', 'like', "%{$q}%")
+                        ->orWhere('codigo_interno', 'like', "%{$q}%")
                         ->orWhere('descripcion', 'like', "%{$q}%")
                         ->orWhere('equivalente', 'like', "%{$q}%")
                         ->orWhere('marca', 'like', "%{$q}%");
@@ -308,7 +342,7 @@ class ProformaController extends Controller
             })
             ->orderBy('descripcion')
             ->limit(15)
-            ->get(['id', 'codigo', 'equivalente', 'descripcion', 'marca', 'unidad', 'precio', 'stock', 'stock_reservado']);
+            ->get(['id', 'codigo', 'codigo_interno', 'equivalente', 'descripcion', 'marca', 'unidad', 'precio', 'stock', 'stock_reservado']);
 
         return response()->json($lista);
     }

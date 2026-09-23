@@ -24,6 +24,11 @@
         $modalidadActual = old('modalidad', isset($venta) ? $venta->modalidad : 'contado');
         $creditoDiasActual = old('credito_dias', isset($venta) ? ($venta->credito_dias ?? 30) : 30);
         $creditoCuotasActual = old('credito_cuotas', isset($venta) ? ($venta->credito_cuotas ?? 1) : 1);
+        $etiquetaCliente = fn ($cliente) => trim(implode(' · ', [
+            $cliente->nombre,
+            'NIT/CI: '.($cliente->nit ?: 's/n'),
+            'Cel: '.($cliente->telefono ?: 's/n'),
+        ]));
     @endphp
 
     <div class="card-giseca" style="margin-bottom:16px;">
@@ -34,12 +39,14 @@
                     data-tomselect="{{ route('clientes.buscar') }}" placeholder="Escribe para buscar cliente...">
                     <option value="">— Seleccionar —</option>
                     @if (! empty($clientePreseleccionado))
-                        <option value="{{ $clientePreseleccionado->id }}" selected>{{ $clientePreseleccionado->nombre }}</option>
+                        @php($datosPreseleccionado = ['nombre' => $clientePreseleccionado->nombre, 'nit' => $clientePreseleccionado->nit, 'telefono' => $clientePreseleccionado->telefono, 'correo' => $clientePreseleccionado->correo, 'direccion' => $clientePreseleccionado->direccion])
+                        <option value="{{ $clientePreseleccionado->id }}" data-data='@json($datosPreseleccionado)' selected>{{ $etiquetaCliente($clientePreseleccionado) }}</option>
                     @endif
                     @foreach ($clientes as $c)
-                        <option value="{{ $c->id }}"
-                            {{ (isset($venta) && $venta->cliente_id == $c->id) || old('cliente_id') == $c->id || (! empty($clientePreseleccionado) && $clientePreseleccionado->id == $c->id) ? 'selected' : '' }}>
-                            {{ $c->nombre }}</option>
+                        @php($datosCliente = ['nombre' => $c->nombre, 'nit' => $c->nit, 'telefono' => $c->telefono, 'correo' => $c->correo, 'direccion' => $c->direccion])
+                        <option value="{{ $c->id }}" data-data='@json($datosCliente)'
+                            {{ (isset($venta) && $venta->cliente_id == $c->id) || old('cliente_id') == $c->id ? 'selected' : '' }}>
+                            {{ $etiquetaCliente($c) }}</option>
                     @endforeach
                 </select>
                 @if (! empty($leadOrigen))
@@ -162,10 +169,10 @@
                 <div style="display:flex; justify-content:space-between;"><span>Subtotal:</span><strong
                         id="v_lblSubtotal">0.00</strong></div>
                 <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <span>Descuento:</span><input type="number" id="v_descuento" name="descuento"
+                    <span>Descuento:</span><span style="display:flex; gap:4px; align-items:center;"><select id="v_descuento_tipo" name="descuento_tipo" onchange="recalcularVenta()" style="border:1px solid var(--gc-borde); border-radius:4px; padding:4px;"><option value="fijo" {{ (isset($venta) ? ($venta->descuento_tipo ?? 'fijo') : old('descuento_tipo', 'fijo')) === 'fijo' ? 'selected' : '' }}>Bs</option><option value="porcentaje" {{ (isset($venta) ? ($venta->descuento_tipo ?? 'fijo') : old('descuento_tipo', 'fijo')) === 'porcentaje' ? 'selected' : '' }}>%</option></select><input type="number" id="v_descuento" name="descuento"
                         value="{{ isset($venta) ? $venta->descuento : old('descuento', 0) }}" min="0"
                         step="0.01" oninput="recalcularVenta()"
-                        style="width:90px; border:1px solid var(--gc-borde); border-radius:4px; padding:4px; text-align:right;">
+                        style="width:90px; border:1px solid var(--gc-borde); border-radius:4px; padding:4px; text-align:right;"></span>
                 </div>
                 <div
                     style="display:flex; justify-content:space-between; border-top:2px solid var(--gc-texto); padding-top:6px; margin-top:6px;">
@@ -198,6 +205,11 @@
     const creditoCuotasVenta = document.getElementById('v_credito_cuotas');
     let timerVenta = null;
 
+    // Escapa texto del servidor antes de inyectarlo al DOM (anti-XSS).
+    function escHtmlVenta(v) {
+      return String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
+
     function actualizarCamposCreditoVenta() {
         const esCredito = modalidadVenta.value === 'credito';
         creditoCamposVenta.style.display = esCredito ? 'grid' : 'none';
@@ -224,25 +236,25 @@
             resultadosVenta.innerHTML = lista.map(p =>
                 `<div class="item"
 data-id="${p.id}"
-data-codigo="${p.codigo}"
-data-interno="${p.codigo_interno || ''}"
-data-desc="${p.descripcion.replace(/"/g, '&quot;')}"
+data-codigo="${escHtmlVenta(p.codigo)}"
+data-interno="${escHtmlVenta(p.codigo_interno || '')}"
+data-desc="${escHtmlVenta(p.descripcion)}"
 data-precio="${p.precio}"
 data-stock="${p.stock_disponible ?? p.stock}"
 
 style="padding:9px 14px; cursor:pointer; border-bottom:1px solid var(--gc-borde); font-size:13px;">
 
 <strong style="color:var(--gc-primario);">
-${p.codigo_interno || 'SIN COD'}
+${escHtmlVenta(p.codigo_interno) || 'SIN COD'}
 </strong>
 
 <br>
 
 <span>
-${p.codigo}
+${escHtmlVenta(p.codigo)}
 </span>
 -
-${p.descripcion}
+${escHtmlVenta(p.descripcion)}
 
 <span style="color:var(--gc-gris-claro);">
 Disponible: ${p.stock_disponible ?? p.stock}
@@ -277,13 +289,13 @@ Disponible: ${p.stock_disponible ?? p.stock}
     <td>
 
         <span class="codigo-chip">
-            ${p.codigo_interno || ''}
+            ${escHtmlVenta(p.codigo_interno) || ''}
         </span>
 
         <br>
 
         <small>
-            ${p.codigo}
+            ${escHtmlVenta(p.codigo)}
         </small>
 
 
@@ -294,13 +306,13 @@ Disponible: ${p.stock_disponible ?? p.stock}
 
         <input type="hidden"
             class="vi-desc"
-            value="${p.descripcion}">
+            value="${escHtmlVenta(p.descripcion)}">
 
     </td>
 
 
     <td>
-        ${p.descripcion}
+        ${escHtmlVenta(p.descripcion)}
     </td>
 
 
@@ -389,9 +401,11 @@ Disponible: ${p.stock_disponible ?? p.stock}
             tr.querySelector('.vi-total').textContent = total.toFixed(2);
             subtotal += total;
         });
-        const desc = parseFloat(document.getElementById('v_descuento').value) || 0;
+        const descVal = parseFloat(document.getElementById('v_descuento').value) || 0;
+        const descTipo = document.getElementById('v_descuento_tipo').value;
+        const descMonto = descTipo === 'porcentaje' ? subtotal * Math.min(descVal, 100) / 100 : descVal;
         document.getElementById('v_lblSubtotal').textContent = subtotal.toFixed(2);
-        document.getElementById('v_lblTotal').textContent = 'Bs ' + (subtotal - desc).toFixed(2);
+        document.getElementById('v_lblTotal').textContent = 'Bs ' + Math.max(0, subtotal - descMonto).toFixed(2);
     }
 
     document.getElementById('formVenta').addEventListener('submit', function(e) {

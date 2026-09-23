@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Cliente;
 use App\Models\Compra;
 use App\Models\Comprobante;
+use App\Models\Lead;
 use App\Models\Producto;
 use App\Models\Proforma;
 use App\Models\Proveedor;
@@ -23,6 +24,7 @@ class PapeleraController extends Controller
         'ventas' => Venta::class,
         'proformas' => Proforma::class,
         'comprobantes' => Comprobante::class,
+        'leads' => Lead::class,
     ];
 
     public const ETIQUETAS = [
@@ -33,6 +35,7 @@ class PapeleraController extends Controller
         'ventas' => 'Ventas',
         'proformas' => 'Proformas',
         'comprobantes' => 'Comprobantes',
+        'leads' => 'Leads',
     ];
 
     protected function clase(string $modelo): string

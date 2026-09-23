@@ -16,7 +16,7 @@ class Venta extends Model
     protected $fillable = [
         'numero', 'tipo', 'modalidad', 'cliente_id', 'cliente_nombre', 'fecha',
         'credito_dias', 'credito_cuotas', 'fecha_vencimiento',
-        'subtotal', 'descuento', 'total', 'pagado', 'base_df', 'debito_fiscal', 'estado',
+        'subtotal', 'descuento', 'descuento_tipo', 'total', 'pagado', 'base_df', 'debito_fiscal', 'estado',
         'entrega_estado', 'entregado_at',
         'observaciones', 'origen_siat', 'codigo_autorizacion',
         'numero_factura_siat', 'nit_cliente', 'comprobante_numero',

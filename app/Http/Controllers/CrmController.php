@@ -112,6 +112,7 @@ class CrmController extends Controller
                 'motivo_envio' => $puedeEnviar ? null : 'Configura token y Phone Number ID para enviar desde Meta.',
                 'ventana_abierta' => $ventanaAbierta,
                 'motivo_ventana' => $ventanaAbierta ? null : 'Fuera de la ventana de 24h: Meta puede rechazar texto libre (usa respuesta a su último mensaje para reabrirla).',
+                'plantilla_disponible' => $puedeEnviar && filled($lead->canalWhatsapp?->plantilla_nombre),
                 'etapa_tipo' => $lead->etapa->tipo,
                 'cliente_id' => $lead->cliente_id,
                 'puede_convertir' => $lead->etapa->tipo === EtapaCrm::GANADA && Permisos::puede($request->user(), 'ventas'),
@@ -132,7 +133,23 @@ class CrmController extends Controller
         $data = $request->validate([
             'mensaje' => ['nullable', 'required_without:archivo', 'string', 'max:4096'],
             'archivo' => ['nullable', 'file', 'max:16384', 'mimetypes:image/jpeg,image/png,audio/aac,audio/mp4,audio/mpeg,audio/amr,audio/ogg,video/mp4,video/3gpp,text/plain,application/pdf,application/msword,application/vnd.ms-excel,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.openxmlformats-officedocument.presentationml.presentation'],
+            'usar_plantilla' => ['nullable', 'boolean'],
         ]);
+
+        if ($request->boolean('usar_plantilla')) {
+            if ($request->hasFile('archivo')) {
+                throw ValidationException::withMessages([
+                    'archivo' => 'La plantilla no admite archivos adjuntos.',
+                ]);
+            }
+            $request->validate(['mensaje' => ['required', 'string', 'max:1000']]);
+            $mensaje = $whatsapp->enviarPlantilla($lead, $request->user(), trim((string) $data['mensaje']));
+
+            return response()->json([
+                'message' => 'Plantilla enviada.',
+                'mensaje' => $this->mensajeJson($mensaje->load('enviadoPor')),
+            ]);
+        }
 
         $mensaje = $request->hasFile('archivo')
             ? $whatsapp->enviarArchivo($lead, $request->user(), $request->file('archivo'), $data['mensaje'] ?? null)
@@ -298,6 +315,18 @@ class CrmController extends Controller
             'cliente_id' => $cliente->id,
             'lead_id' => $lead->id,
         ])->with('exito', "Lead convertido: cliente {$cliente->nombre} listo, carga los items de la venta.");
+    }
+
+    public function destroyLead(Request $request, Lead $lead): RedirectResponse|JsonResponse
+    {
+        $lead = $this->consultaVisible($request->user())->findOrFail($lead->id);
+        $lead->delete();
+
+        if ($request->expectsJson()) {
+            return response()->json(['message' => 'Lead enviado a papelera.']);
+        }
+
+        return redirect()->route('crm.index')->with('exito', 'Lead enviado a papelera.');
     }
 
     public function canales(): View
@@ -481,6 +510,8 @@ class CrmController extends Controller
             'waba_id' => ['nullable', 'string', 'max:255'],
             'phone_number_id' => ['nullable', 'string', 'max:255', Rule::unique('canal_whatsapps', 'phone_number_id')->ignore($canal)],
             'access_token' => ['nullable', 'string'],
+            'plantilla_nombre' => ['nullable', 'string', 'max:100'],
+            'plantilla_idioma' => ['nullable', 'string', 'max:10'],
             'graph_version' => ['nullable', 'string', 'max:20'],
             'activo' => ['nullable', 'boolean'],
             'vendedores' => ['nullable', 'array'],

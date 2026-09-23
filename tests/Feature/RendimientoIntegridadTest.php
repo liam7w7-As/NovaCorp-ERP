@@ -185,4 +185,21 @@ class RendimientoIntegridadTest extends TestCase
         // El pago inicial ya cubre el total: ni siquiera el exacto duplica.
         $this->assertSame(1, $comp->pagos()->count());
     }
+
+    public function test_kpis_ventas_respetan_filtros(): void
+    {
+        foreach ([['contado', 100], ['credito', 200]] as [$modalidad, $total]) {
+            Venta::create([
+                'numero' => 'VTA-KPI-'.$modalidad, 'tipo' => 'sin_factura', 'modalidad' => $modalidad,
+                'fecha' => now()->toDateString(), 'cliente_nombre' => 'Cli',
+                'subtotal' => $total, 'total' => $total, 'estado' => 'activa',
+            ]);
+        }
+
+        $response = $this->actingAs($this->admin)->get(route('ventas.index', ['modalidad' => 'credito']));
+        $response->assertOk();
+        $kpis = $response->viewData('kpis');
+        $this->assertEquals(200, (float) $kpis['total']);
+        $this->assertSame(1, $kpis['documentos']);
+    }
 }

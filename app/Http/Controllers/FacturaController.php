@@ -256,7 +256,7 @@ class FacturaController extends Controller
         $path = $facturas->generarPdf($factura);
         $factura->update(['pdf_path' => $path]);
 
-        return Storage::disk('public')->download($factura->pdf_path, $factura->numero_factura.'.pdf');
+        return Storage::disk('public')->response($factura->pdf_path, $factura->numero_factura.'.pdf');
     }
 
     public function descargarPdfRollo(FacturaElectronica $factura, FacturaService $facturas)
@@ -271,7 +271,7 @@ class FacturaController extends Controller
         $pdf->setOption('isRemoteEnabled', true);
         $pdf->setPaper([0, 0, 226.77, 800], 'portrait'); // 80mm de ancho, largo dinámico
 
-        return $pdf->download($factura->numero_factura.'-rollo-80mm.pdf');
+        return $pdf->stream($factura->numero_factura.'-rollo-80mm.pdf');
     }
 
     public function descargarPdfMedioOficio(FacturaElectronica $factura, FacturaService $facturas)
@@ -281,13 +281,14 @@ class FacturaController extends Controller
         $pdf = Pdf::loadView('facturas.pdf-medio-oficio', [
             'factura' => $factura,
             'empresa' => Configuracion::empresa(),
+            'logoPath' => $facturas->logoPathParaPdf(),
             'qrUrl' => $facturas->urlQr($factura, 2, 360),
         ]);
         $pdf->setOption('isRemoteEnabled', true);
         // Half Letter / Medio Oficio: 5.5 x 8.5 inches = 396 x 612 pt
         $pdf->setPaper([0, 0, 396, 612], 'portrait');
 
-        return $pdf->download($factura->numero_factura.'-medio-oficio.pdf');
+        return $pdf->stream($factura->numero_factura.'-medio-oficio.pdf');
     }
 
     public function descargarPdfRollo58(FacturaElectronica $factura, FacturaService $facturas)
@@ -303,7 +304,7 @@ class FacturaController extends Controller
         // Rollo 58mm térmico: 58mm = 164.41 pt
         $pdf->setPaper([0, 0, 164.41, 800], 'portrait');
 
-        return $pdf->download($factura->numero_factura.'-rollo-58mm.pdf');
+        return $pdf->stream($factura->numero_factura.'-rollo-58mm.pdf');
     }
 
     public function descargarXml(FacturaElectronica $factura)

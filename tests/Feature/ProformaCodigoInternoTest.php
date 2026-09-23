@@ -48,4 +48,26 @@ class ProformaCodigoInternoTest extends TestCase
             ->assertSee('Cód. Interno', false)
             ->assertSee($detalle->codigo_interno, false);
     }
+
+    public function test_pdf_se_abre_inline(): void
+    {
+        $producto = Producto::create([
+            'codigo' => 'PCI-PDF', 'descripcion' => 'Prod pdf',
+            'costo' => 10, 'precio' => 20, 'stock' => 50,
+        ]);
+        $this->actingAs($this->admin)->post(route('proformas.store'), [
+            'cliente_nuevo' => 'Cliente PDF',
+            'fecha' => now()->toDateString(),
+            'items' => [
+                ['producto_id' => $producto->id, 'cantidad' => 1, 'precio' => 20],
+            ],
+        ])->assertSessionHas('exito');
+
+        $proforma = Proforma::latest('id')->firstOrFail();
+        $response = $this->actingAs($this->admin)->get(route('proformas.pdf', $proforma));
+
+        $response->assertOk();
+        $this->assertStringContainsString('application/pdf', $response->headers->get('Content-Type'));
+        $this->assertStringContainsString('inline', $response->headers->get('Content-Disposition'));
+    }
 }

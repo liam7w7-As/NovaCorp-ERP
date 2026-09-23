@@ -50,12 +50,15 @@
 <div class="linea"></div>
 
 <table>
+  <tr>
+    <td class="b" style="width:22%;">CANT.</td>
+    <td class="b">ARTÍCULO</td>
+    <td class="b r" style="width:28%;">SUBTOTAL</td>
+  </tr>
   @foreach($factura->venta->detalles ?? [] as $it)
     <tr>
-      <td colspan="2" class="b">{{ $it->descripcion_producto }}</td>
-    </tr>
-    <tr>
-      <td>{{ number_format((float)$it->cantidad, 2) }} x {{ formatoMoneda($it->precio_unitario) }}</td>
+      <td>{{ number_format((float)$it->cantidad, 2) }}</td>
+      <td>{{ $it->descripcion_producto }}<br><span style="font-size:7.5px;">{{ $it->codigo_producto }} · {{ formatoMoneda($it->precio_unitario) }} c/u</span></td>
       <td class="r">{{ formatoMoneda($it->subtotal) }}</td>
     </tr>
   @endforeach

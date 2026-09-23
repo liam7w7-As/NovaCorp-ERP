@@ -450,11 +450,13 @@ class FacturaService
             .'</'.$raizXml.'>';
     }
 
-    public function generarPdf(FacturaElectronica $factura): string
+    /**
+     * Ruta física local del logo para DomPDF (sin depender de HTTP
+     * al propio servidor). Null si no hay archivo disponible.
+     */
+    public function logoPathParaPdf(): ?string
     {
-        $factura->loadMissing('venta');
         $logo = Configuracion::logo();
-        // Ruta física local para DomPDF (sin depender de HTTP al propio servidor).
         $logoPath = public_path($logo['path'] ?? 'images/logo.png');
         if (! is_file($logoPath) && ! empty($logo['path']) && ! str_contains($logo['path'], '..')) {
             $candidato = storage_path('app/public/'.$logo['path']);
@@ -462,10 +464,17 @@ class FacturaService
                 $logoPath = $candidato;
             }
         }
+
+        return is_file($logoPath) ? $logoPath : null;
+    }
+
+    public function generarPdf(FacturaElectronica $factura): string
+    {
+        $factura->loadMissing('venta');
         $pdf = Pdf::loadView('facturas.pdf', [
             'factura' => $factura,
             'empresa' => Configuracion::empresa(),
-            'logoPath' => is_file($logoPath) ? $logoPath : null,
+            'logoPath' => $this->logoPathParaPdf(),
             'qrUrl' => $this->urlQr($factura, 2, 360),
         ]);
         $pdf->setOption('isRemoteEnabled', true);

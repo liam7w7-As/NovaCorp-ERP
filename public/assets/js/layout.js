@@ -113,7 +113,7 @@ function gcInicializarTomSelect() {
     new TomSelect(sel, {
       valueField: 'id',
       labelField: 'nombre',
-      searchField: ['nombre', 'nit'],
+      searchField: ['nombre', 'nit', 'telefono'],
       placeholder: 'Escribe para buscar...',
       maxOptions: 15,
       load: function (q, cb) {
@@ -125,9 +125,20 @@ function gcInicializarTomSelect() {
       },
       render: {
         option: function (d, esc) {
-          return '<div>' + esc(d.nombre) + (d.nit ? ' <span style="color:var(--gc-gris-claro)">(' + esc(d.nit) + ')</span>' : '') + '</div>';
+          var linea = '<div><strong>' + esc(d.nombre) + '</strong>' + (d.nit ? ' <span style="color:var(--gc-gris-claro)">NIT ' + esc(d.nit) + '</span>' : '');
+          var detalles = [];
+          if (d.telefono) detalles.push('Tel: ' + esc(d.telefono));
+          if (d.correo) detalles.push(esc(d.correo));
+          if (d.direccion) detalles.push(esc(d.direccion));
+          if (detalles.length) linea += '<br><small style="color:var(--gc-gris-claro)">' + detalles.join(' · ') + '</small>';
+          return linea + '</div>';
         },
-        item: function (d, esc) { return '<div>' + esc(d.nombre) + '</div>'; },
+        item: function (d, esc) {
+          var extras = [];
+          if (d.nit) extras.push('NIT/CI ' + esc(d.nit));
+          if (d.telefono) extras.push('Tel: ' + esc(d.telefono));
+          return '<div>' + esc(d.nombre) + (extras.length ? ' <small style="color:var(--gc-gris-claro)">(' + extras.join(' · ') + ')</small>' : '') + '</div>';
+        },
       },
     });
   });

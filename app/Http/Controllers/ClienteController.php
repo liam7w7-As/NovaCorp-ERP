@@ -118,7 +118,7 @@ class ClienteController extends Controller
     }
 
     /**
-     * GET /clientes/buscar?q=... → [{id, nombre, nit}]
+     * GET /clientes/buscar?q=... → [{id, nombre, nit, telefono, correo, direccion}]
      */
     public function buscar(Request $request)
     {
@@ -128,12 +128,13 @@ class ClienteController extends Controller
             ->when($q, function ($query) use ($q) {
                 $query->where(function ($sub) use ($q) {
                     $sub->where('nombre', 'like', "%{$q}%")
-                        ->orWhere('nit', 'like', "%{$q}%");
+                        ->orWhere('nit', 'like', "%{$q}%")
+                        ->orWhere('telefono', 'like', "%{$q}%");
                 });
             })
             ->orderBy('nombre')
             ->limit(15)
-            ->get(['id', 'nombre', 'nit']);
+            ->get(['id', 'nombre', 'nit', 'telefono', 'correo', 'direccion']);
 
         return response()->json($lista);
     }

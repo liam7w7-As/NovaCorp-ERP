@@ -8,6 +8,7 @@ use App\Models\Producto;
 use App\Models\Proveedor;
 use App\Services\ComprobanteService;
 use App\Services\ContadorService;
+use App\Services\Descuentos;
 use App\Services\SiatCsvService;
 use App\Services\StockService;
 use Illuminate\Http\Request;
@@ -66,6 +67,7 @@ class CompraController extends Controller
             'modalidad' => 'required|in:contado,credito',
             'fecha' => 'required|date',
             'descuento' => 'nullable|numeric|min:0',
+            'descuento_tipo' => 'nullable|in:fijo,porcentaje',
             'metodo' => 'nullable|string|max:100',
             'observaciones' => 'nullable|string',
             'items' => 'required|array|min:1',
@@ -108,7 +110,8 @@ class CompraController extends Controller
             }
 
             $descuento = round((float) ($data['descuento'] ?? 0), 2);
-            $total = max(0, round($subtotal - $descuento, 2));
+            $tipoDescuento = Descuentos::normalizarTipo($data['descuento_tipo'] ?? null);
+            $total = Descuentos::total($subtotal, $descuento, $tipoDescuento);
             $numero = $contadores->siguienteUnico(
                 $data['tipo'] === 'con_factura' ? 'FC-' : 'SF-',
                 fn ($n) => Compra::withTrashed()->where('numero', $n)->exists()
@@ -123,6 +126,7 @@ class CompraController extends Controller
                 'fecha' => $data['fecha'],
                 'subtotal' => $subtotal,
                 'descuento' => $descuento,
+                'descuento_tipo' => $tipoDescuento,
                 'total' => $total,
                 'base_cf' => $data['tipo'] === 'con_factura' ? $total : null,
                 'credito_fiscal' => $data['tipo'] === 'con_factura' ? round($total * 0.13, 2) : null,
@@ -133,6 +137,7 @@ class CompraController extends Controller
             foreach ($detalles as $d) {
                 $compra->detalles()->create([
                     'producto_id' => $d['producto']->id,
+                    'codigo_interno' => $d['producto']->codigo_interno,
                     'codigo_producto' => $d['producto']->codigo,
                     'descripcion_producto' => $d['producto']->descripcion,
                     'cantidad' => $d['cantidad'],
@@ -225,7 +230,8 @@ class CompraController extends Controller
                     $detalles[] = compact('producto', 'cantidad', 'costo', 'sub');
                 }
                 $descuento = round((float) ($data['descuento'] ?? 0), 2);
-                $total = max(0, round($subtotal - $descuento, 2));
+                $tipoDescuento = Descuentos::normalizarTipo($data['descuento_tipo'] ?? null);
+                $total = Descuentos::total($subtotal, $descuento, $tipoDescuento);
 
                 $compra->update([
                     'tipo' => $data['tipo'],
@@ -235,6 +241,7 @@ class CompraController extends Controller
                     'fecha' => $data['fecha'],
                     'subtotal' => $subtotal,
                     'descuento' => $descuento,
+                    'descuento_tipo' => $tipoDescuento,
                     'total' => $total,
                     'base_cf' => $data['tipo'] === 'con_factura' ? $total : null,
                     'credito_fiscal' => $data['tipo'] === 'con_factura' ? round($total * 0.13, 2) : null,
@@ -244,6 +251,7 @@ class CompraController extends Controller
                 foreach ($detalles as $d) {
                     $compra->detalles()->create([
                         'producto_id' => $d['producto']->id,
+                        'codigo_interno' => $d['producto']->codigo_interno,
                         'codigo_producto' => $d['producto']->codigo,
                         'descripcion_producto' => $d['producto']->descripcion,
                         'cantidad' => $d['cantidad'],
@@ -507,7 +515,7 @@ class CompraController extends Controller
                 DB::transaction(function () use ($numeroDoc, $tipo, $primera, $proveedor, $items, $contadores, $stock, $comprobantes) {
                     $subtotal = round(array_sum(array_map(fn ($it) => $it['cantidad'] * $it['costo'], $items)), 2);
                     $descuento = round((float) ($primera['Descuento'] ?? $primera['descuento'] ?? 0), 2);
-                    $total = max(0, round($subtotal - $descuento, 2));
+                    $total = Descuentos::total($subtotal, $descuento, Descuentos::FIJO);
 
                     $compra = Compra::create([
                         'numero' => $numeroDoc ?? $contadores->siguienteUnico($tipo === 'con_factura' ? 'FC-' : 'SF-', fn ($n) => Compra::withTrashed()->where('numero', $n)->exists()),
@@ -517,6 +525,7 @@ class CompraController extends Controller
                         'fecha' => trim((string) ($primera['Fecha'] ?? $primera['fecha'] ?? '')) ?: date('Y-m-d'),
                         'subtotal' => $subtotal,
                         'descuento' => $descuento,
+                        'descuento_tipo' => Descuentos::FIJO,
                         'total' => $total,
                         'base_cf' => $tipo === 'con_factura' ? $total : null,
                         'credito_fiscal' => $tipo === 'con_factura' ? round($total * 0.13, 2) : null,
@@ -527,6 +536,7 @@ class CompraController extends Controller
                         $sub = round($it['cantidad'] * $it['costo'], 2);
                         $compra->detalles()->create([
                             'producto_id' => $it['producto']->id,
+                            'codigo_interno' => $it['producto']->codigo_interno,
                             'codigo_producto' => $it['producto']->codigo,
                             'descripcion_producto' => $it['producto']->descripcion,
                             'cantidad' => $it['cantidad'],

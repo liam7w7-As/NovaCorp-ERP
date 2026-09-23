@@ -22,7 +22,8 @@
         <select id="c_proveedor" name="proveedor_id" class="form-control-giseca" data-tomselect="{{ route('proveedores.buscar') }}" placeholder="Escribe para buscar proveedor...">
           <option value="">— Seleccionar —</option>
           @foreach($proveedores as $p)
-            <option value="{{ $p->id }}" {{ (isset($compra) && $compra->proveedor_id == $p->id) || old('proveedor_id') == $p->id ? 'selected' : '' }}>{{ $p->nombre }}</option>
+            @php($datosProveedor = ['nombre' => $p->nombre, 'nit' => $p->nit, 'telefono' => $p->telefono])
+            <option value="{{ $p->id }}" data-data='@json($datosProveedor)' {{ (isset($compra) && $compra->proveedor_id == $p->id) || old('proveedor_id') == $p->id ? 'selected' : '' }}>{{ $p->nombre }}</option>
           @endforeach
         </select>
       </div>
@@ -59,11 +60,12 @@
     </div>
 
     <table class="tabla-giseca" style="margin-top:12px;" id="tablaItemsCompra">
-      <thead><tr><th>Código</th><th>Descripción</th><th style="width:80px">Cant.</th><th style="width:110px">Costo</th><th style="width:100px">Total</th><th></th></tr></thead>
+      <thead><tr><th>Cód. Interno</th><th>Código</th><th>Descripción</th><th style="width:80px">Cant.</th><th style="width:110px">Costo</th><th style="width:100px">Total</th><th></th></tr></thead>
       <tbody>
         @if(isset($compra))
           @foreach($compra->detalles as $i => $d)
             <tr>
+              <td><span class="codigo-chip">{{ $d->codigo_interno ?? $d->producto?->codigo_interno ?? '—' }}</span></td>
               <td><span class="codigo-chip">{{ $d->codigo_producto }}</span><input type="hidden" name="items[{{ $i }}][producto_id]" value="{{ $d->producto_id }}"><input type="hidden" class="ci-desc" value="{{ $d->descripcion_producto }}"></td>
               <td>{{ $d->descripcion_producto }}</td>
               <td><input type="number" step="0.01" min="0.01" name="items[{{ $i }}][cantidad]" value="{{ $d->cantidad }}" class="ci-cant" oninput="recalcularCompra()" style="border:1px solid var(--gc-borde); border-radius:4px; padding:5px 6px; font-size:12.5px; width:100%; background:var(--gc-superficie); color:var(--gc-texto);"></td>
@@ -79,7 +81,7 @@
     <div style="display:flex; justify-content:flex-end; margin-top:10px;">
       <div style="width:260px;">
         <div style="display:flex; justify-content:space-between;"><span>Subtotal:</span><strong id="c_lblSubtotal">0.00</strong></div>
-        <div style="display:flex; justify-content:space-between; align-items:center;"><span>Descuento:</span><input type="number" id="c_descuento" name="descuento" value="{{ isset($compra) ? $compra->descuento : old('descuento', 0) }}" min="0" step="0.01" oninput="recalcularCompra()" style="width:90px; border:1px solid var(--gc-borde); border-radius:4px; padding:4px; text-align:right;"></div>
+        <div style="display:flex; justify-content:space-between; align-items:center;"><span>Descuento:</span><span style="display:flex; gap:4px; align-items:center;"><select id="c_descuento_tipo" name="descuento_tipo" onchange="recalcularCompra()" style="border:1px solid var(--gc-borde); border-radius:4px; padding:4px;"><option value="fijo" {{ (isset($compra) ? ($compra->descuento_tipo ?? 'fijo') : old('descuento_tipo', 'fijo')) === 'fijo' ? 'selected' : '' }}>Bs</option><option value="porcentaje" {{ (isset($compra) ? ($compra->descuento_tipo ?? 'fijo') : old('descuento_tipo', 'fijo')) === 'porcentaje' ? 'selected' : '' }}>%</option></select><input type="number" id="c_descuento" name="descuento" value="{{ isset($compra) ? $compra->descuento : old('descuento', 0) }}" min="0" step="0.01" oninput="recalcularCompra()" style="width:90px; border:1px solid var(--gc-borde); border-radius:4px; padding:4px; text-align:right;"></span></div>
         <div style="display:flex; justify-content:space-between; border-top:2px solid var(--gc-texto); padding-top:6px; margin-top:6px;"><strong>Total:</strong><strong id="c_lblTotal" style="color:var(--gc-primario-oscuro);">Bs 0.00</strong></div>
       </div>
     </div>
@@ -97,6 +99,11 @@ const buscadorCompra = document.getElementById('c_buscador');
 const resultadosCompra = document.getElementById('resultadosBusquedaCompra');
 let timerCompra = null;
 
+// Escapa texto del servidor antes de inyectarlo al DOM (anti-XSS).
+function escHtml(v) {
+  return String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
 buscadorCompra.addEventListener('input', function() {
   clearTimeout(timerCompra);
   const t = this.value.trim();
@@ -105,10 +112,10 @@ buscadorCompra.addEventListener('input', function() {
     const r = await fetch("{{ route('productos.buscar') }}?q=" + encodeURIComponent(t), { headers: { 'Accept': 'application/json' } });
     const lista = await r.json();
     resultadosCompra.innerHTML = lista.map(p =>
-      `<div class="item" data-id="${p.id}" data-codigo="${p.codigo}" data-desc="${p.descripcion.replace(/"/g, '&quot;')}" data-costo="${p.costo}" style="padding:9px 14px; cursor:pointer; border-bottom:1px solid var(--gc-borde); font-size:13px;"><strong>${p.codigo}</strong> — ${p.descripcion}</div>`
+      `<div class="item" data-id="${p.id}" data-interno="${escHtml(p.codigo_interno || '')}" data-codigo="${escHtml(p.codigo)}" data-desc="${escHtml(p.descripcion)}" data-costo="${p.costo}" style="padding:9px 14px; cursor:pointer; border-bottom:1px solid var(--gc-borde); font-size:13px;"><strong>${escHtml(p.codigo)}</strong>${p.codigo_interno ? ' <span style="color:var(--gc-gris-claro)">[' + escHtml(p.codigo_interno) + ']</span>' : ''} — ${escHtml(p.descripcion)}</div>`
     ).join('') || '<div class="item" style="padding:9px 14px;">Sin resultados</div>';
     resultadosCompra.querySelectorAll('.item[data-id]').forEach(el => {
-      el.addEventListener('click', () => agregarItemCompra({ id: el.dataset.id, codigo: el.dataset.codigo, descripcion: el.dataset.desc, costo: el.dataset.costo }));
+      el.addEventListener('click', () => agregarItemCompra({ id: el.dataset.id, interno: el.dataset.interno, codigo: el.dataset.codigo, descripcion: el.dataset.desc, costo: el.dataset.costo }));
     });
   }, 250);
 });
@@ -120,8 +127,9 @@ function agregarItemCompra(p) {
   const tbody = document.querySelector('#tablaItemsCompra tbody');
   const tr = document.createElement('tr');
   tr.innerHTML = `
-    <td><span class="codigo-chip">${p.codigo}</span><input type="hidden" name="items[${idxCompra}][producto_id]" value="${p.id}"><input type="hidden" class="ci-desc" value="${p.descripcion}"></td>
-    <td>${p.descripcion}</td>
+    <td><span class="codigo-chip">${escHtml(p.interno) || '—'}</span></td>
+    <td><span class="codigo-chip">${escHtml(p.codigo)}</span><input type="hidden" name="items[${idxCompra}][producto_id]" value="${p.id}"><input type="hidden" class="ci-desc" value="${escHtml(p.descripcion)}"></td>
+    <td>${escHtml(p.descripcion)}</td>
     <td><input type="number" step="0.01" min="0.01" name="items[${idxCompra}][cantidad]" value="1" class="ci-cant" oninput="recalcularCompra()" style="border:1px solid var(--gc-borde); border-radius:4px; padding:5px 6px; font-size:12.5px; width:100%; background:var(--gc-superficie); color:var(--gc-texto);"></td>
     <td><input type="number" step="0.01" min="0" name="items[${idxCompra}][costo]" value="${p.costo}" class="ci-costo" oninput="recalcularCompra()" style="border:1px solid var(--gc-borde); border-radius:4px; padding:5px 6px; font-size:12.5px; width:100%; background:var(--gc-superficie); color:var(--gc-texto);"></td>
     <td class="text-end ci-total">${Number(p.costo).toFixed(2)}</td>
@@ -150,9 +158,11 @@ function recalcularCompra() {
     tr.querySelector('.ci-total').textContent = total.toFixed(2);
     subtotal += total;
   });
-  const desc = parseFloat(document.getElementById('c_descuento').value) || 0;
+  const descVal = parseFloat(document.getElementById('c_descuento').value) || 0;
+  const descTipo = document.getElementById('c_descuento_tipo').value;
+  const descMonto = descTipo === 'porcentaje' ? subtotal * Math.min(descVal, 100) / 100 : descVal;
   document.getElementById('c_lblSubtotal').textContent = subtotal.toFixed(2);
-  document.getElementById('c_lblTotal').textContent = 'Bs ' + (subtotal - desc).toFixed(2);
+  document.getElementById('c_lblTotal').textContent = 'Bs ' + Math.max(0, subtotal - descMonto).toFixed(2);
 }
 
 document.getElementById('formCompra').addEventListener('submit', function(e) {

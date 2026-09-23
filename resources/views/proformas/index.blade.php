@@ -41,8 +41,11 @@
           <td><span class="estado estado-{{ $p->estado }}">{{ strtoupper($p->estado) }}</span></td>
           <td class="text-end" style="white-space:nowrap;">
             <a href="{{ route('proformas.show', $p) }}" class="btn-giseca btn-outline btn-icon btn-sm" title="Ver"><i class="bi bi-eye"></i></a>
+            <a href="{{ route('proformas.pdf', $p) }}" target="_blank" rel="noopener" class="btn-giseca btn-outline btn-icon btn-sm" title="Abrir PDF"><i class="bi bi-printer"></i></a>
+            <a href="https://wa.me/?text={{ urlencode('Estimado cliente, adjuntamos la Proforma N° ' . $p->numero . ' de GISECA SRL por un total de Bs ' . formatoMoneda($p->total) . '. Puede revisarla en: ' . route('proformas.show', $p)) }}" target="_blank" rel="noopener" class="btn-giseca btn-outline btn-icon btn-sm" title="Enviar por WhatsApp"><i class="bi bi-whatsapp" style="color:#25D366;"></i></a>
             @if(!$p->esta_convertida)
               <a href="{{ route('proformas.edit', $p) }}" class="btn-giseca btn-outline btn-icon btn-sm" title="Editar"><i class="bi bi-pencil"></i></a>
+              <form method="POST" action="{{ route('proformas.convertir-venta', $p) }}" style="display:inline;" data-confirm="¿Convertir la proforma {{ $p->numero }} a venta (sin factura, contado, efectivo)?" data-confirm-title="Convertir a venta" data-confirm-label="Convertir" data-confirm-variant="primario">@csrf<input type="hidden" name="tipo" value="sin_factura"><input type="hidden" name="modalidad" value="contado"><input type="hidden" name="metodo" value="Efectivo"><button type="submit" class="btn-giseca btn-outline btn-icon btn-sm" title="Convertir a venta"><i class="bi bi-cart-check" style="color:var(--gc-primario);"></i></button></form>
               @can('admin')<form method="POST" action="{{ route('proformas.destroy', $p) }}" style="display:inline;" data-confirm="¿Eliminar la proforma {{ $p->numero }}?" data-confirm-title="Eliminar proforma" data-confirm-label="Eliminar" data-confirm-variant="peligro">@csrf @method('DELETE')<button type="submit" class="btn-giseca btn-outline btn-icon btn-sm" title="Eliminar"><i class="bi bi-trash" style="color:var(--gc-rojo);"></i></button></form>@endcan
             @endif
           </td>

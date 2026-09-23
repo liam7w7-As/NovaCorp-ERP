@@ -14,7 +14,7 @@ class Compra extends Model
 
     protected $fillable = [
         'numero', 'tipo', 'modalidad', 'proveedor_id', 'proveedor_nombre', 'fecha',
-        'subtotal', 'descuento', 'total', 'pagado', 'base_cf', 'credito_fiscal',
+        'subtotal', 'descuento', 'descuento_tipo', 'total', 'pagado', 'base_cf', 'credito_fiscal',
         'observaciones', 'origen_siat', 'codigo_autorizacion',
         'numero_factura_siat', 'nit_proveedor', 'comprobante_numero',
     ];

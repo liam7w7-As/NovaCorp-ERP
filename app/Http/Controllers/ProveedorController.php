@@ -126,12 +126,13 @@ class ProveedorController extends Controller
             ->when($q, function ($query) use ($q) {
                 $query->where(function ($sub) use ($q) {
                     $sub->where('nombre', 'like', "%{$q}%")
-                        ->orWhere('nit', 'like', "%{$q}%");
+                        ->orWhere('nit', 'like', "%{$q}%")
+                        ->orWhere('telefono', 'like', "%{$q}%");
                 });
             })
             ->orderBy('nombre')
             ->limit(15)
-            ->get(['id', 'nombre', 'nit']);
+            ->get(['id', 'nombre', 'nit', 'telefono']);
 
         return response()->json($lista);
     }

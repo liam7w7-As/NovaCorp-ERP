@@ -17,7 +17,7 @@
 <div class="no-imprimir" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:18px; flex-wrap:wrap; gap:10px;">
   <span class="estado estado-{{ $proforma->estado }}" style="font-size:12.5px; padding:5px 14px;">{{ strtoupper($proforma->estado) }}</span>
   <div style="display:flex; gap:8px; flex-wrap:wrap;">
-    <button class="btn-giseca btn-oscuro btn-sm" onclick="window.print()"><i class="bi bi-file-earmark-pdf"></i> Generar PDF (Imprimir)</button>
+    <a class="btn-giseca btn-oscuro btn-sm" href="{{ route('proformas.pdf', $proforma) }}" target="_blank" rel="noopener"><i class="bi bi-file-earmark-pdf"></i> Abrir PDF</a>
     <button class="btn-giseca btn-sm" id="btnWhatsapp" style="background:#25D366; color:#fff;"><i class="bi bi-whatsapp"></i> Enviar por WhatsApp</button>
     @if(!$proforma->esta_convertida)
       <form method="POST" action="{{ route('proformas.cambiar-estado', $proforma) }}" style="display:inline;">@csrf<button name="estado" value="aprobada" class="btn-giseca btn-outline btn-sm">Marcar Aprobada</button></form>
@@ -40,25 +40,15 @@
 @endif
 
 <div class="pdf-preview" id="pdfPreview">
-  @if(!empty($membretado))
-    <div style="margin-bottom:14px;">
-      @if($membretado['tipo'] === 'image')
-        <img src="{{ $membretado['url'] }}" style="width:100%; border-radius:4px;" alt="Membretado">
-      @else
-        <embed src="{{ $membretado['url'] }}" type="application/pdf" style="width:100%; height:160px;">
-      @endif
-    </div>
-    <div style="text-align:right; border-bottom:2px solid var(--gc-texto); padding-bottom:10px; margin-bottom:14px;">
-      <div style="font-weight:800; font-size:16px;">PROFORMA <span class="codigo-chip">{{ $proforma->numero }}</span></div>
-      <div>Fecha: {{ $proforma->fecha->format('Y-m-d') }} — Válida hasta: {{ $proforma->validez ? $proforma->validez->format('Y-m-d') : '—' }}</div>
-    </div>
-  @else
   <div class="pdf-header">
-    <div>
-      <div style="font-weight:800; font-size:18px; color:var(--gc-texto);">{{ $empresa['nombre'] }}</div>
-      @if($empresa['direccion'])<div>{{ $empresa['direccion'] }}</div>@endif
-      @if($empresa['telefono'])<div>Tel: {{ $empresa['telefono'] }}</div>@endif
-      @if($empresa['email'])<div>{{ $empresa['email'] }}</div>@endif
+    <div style="display:flex; gap:12px; align-items:center;">
+      <img src="{{ $logo['url'] }}" alt="Logo" style="width:110px;">
+      <div>
+        <div style="font-weight:800; font-size:18px; color:var(--gc-texto);">{{ $empresa['nombre'] }}</div>
+        @if($empresa['direccion'])<div>{{ $empresa['direccion'] }}</div>@endif
+        @if($empresa['telefono'])<div>Tel: {{ $empresa['telefono'] }}</div>@endif
+        @if($empresa['email'])<div>{{ $empresa['email'] }}</div>@endif
+      </div>
     </div>
     <div style="text-align:right;">
       <div style="font-weight:800; font-size:16px;">PROFORMA <span class="codigo-chip">{{ $proforma->numero }}</span></div>
@@ -66,7 +56,6 @@
       <div>Válida hasta: {{ $proforma->validez ? $proforma->validez->format('Y-m-d') : '—' }}</div>
     </div>
   </div>
-  @endif
 
   <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:16px;">
     <div><strong>Cliente:</strong> {{ $proforma->cliente_nombre }}</div>
@@ -90,7 +79,7 @@
   <div style="display:flex; justify-content:flex-end; margin-bottom:20px;">
     <div style="width:280px;">
       <div style="display:flex; justify-content:space-between; padding:3px 0;"><span>Subtotal:</span><span>{{ formatoMoneda($proforma->subtotal) }}</span></div>
-      <div style="display:flex; justify-content:space-between; padding:3px 0;"><span>Descuento:</span><span>{{ formatoMoneda($proforma->descuento) }}</span></div>
+      <div style="display:flex; justify-content:space-between; padding:3px 0;"><span>Descuento:</span><span>{{ \App\Services\Descuentos::etiqueta((float) $proforma->subtotal, (float) $proforma->descuento, $proforma->descuento_tipo ?? 'fijo') }}</span></div>
       <div style="display:flex; justify-content:space-between; padding:6px 0; border-top:2px solid var(--gc-texto); font-weight:800; font-size:16px;">
         <span>TOTAL:</span><span style="color:var(--gc-primario-oscuro);">Bs {{ formatoMoneda($proforma->total) }}</span>
       </div>

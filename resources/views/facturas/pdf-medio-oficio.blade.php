@@ -36,6 +36,11 @@
 </head>
 <body>
 
+@if(! empty($logoPath ?? null))
+  <div style="position:absolute; top:10px; left:0; width:100%; text-align:center;">
+    <img src="{{ $logoPath }}" height="27" alt="Logo">
+  </div>
+@endif
 <table class="header">
   <tr>
     <td style="width: 58%;">

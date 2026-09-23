@@ -11,6 +11,7 @@ use App\Models\Sucursal;
 use App\Models\Venta;
 use App\Services\ComprobanteService;
 use App\Services\ContadorService;
+use App\Services\Descuentos;
 use App\Services\Permisos;
 use App\Services\SiatCsvService;
 use App\Services\StockService;
@@ -51,10 +52,30 @@ class VentaController extends Controller
 
         $ventas = $query->paginate(20)->withQueryString();
 
-        $activas = Venta::where('estado', 'activa');
-        if ($request->filled('sucursal_id')) {
-            $activas->where('sucursal_id', $request->get('sucursal_id'));
-        }
+        // Los KPIs respetan los mismos filtros del listado.
+        $filtrosLista = function ($query) use ($request) {
+            if ($request->filled('tipo')) {
+                $query->where('tipo', $request->get('tipo'));
+            }
+            if ($request->filled('modalidad')) {
+                $query->where('modalidad', $request->get('modalidad'));
+            }
+            if ($request->filled('sucursal_id')) {
+                $query->where('sucursal_id', $request->get('sucursal_id'));
+            }
+            if ($request->filled('q')) {
+                $q = trim($request->get('q'));
+                $query->where(function ($sub) use ($q) {
+                    $sub->where('numero', 'like', "%{$q}%")
+                        ->orWhere('cliente_nombre', 'like', "%{$q}%")
+                        ->orWhere('numero_factura_siat', 'like', "%{$q}%");
+                });
+            }
+
+            return $query;
+        };
+
+        $activas = $filtrosLista(Venta::where('estado', 'activa'));
 
         $cuotasVencidas = CuotaVenta::whereIn('estado', ['pendiente', 'parcial'])
             ->whereDate('fecha_vencimiento', '<', now()->toDateString())
@@ -65,12 +86,9 @@ class VentaController extends Controller
                 }
             });
 
-        $porEntregar = Venta::where('estado', 'activa')
+        $porEntregar = $filtrosLista(Venta::where('estado', 'activa'))
             ->where('origen_siat', false)
             ->where('entrega_estado', '!=', 'entregada');
-        if ($request->filled('sucursal_id')) {
-            $porEntregar->where('sucursal_id', $request->get('sucursal_id'));
-        }
 
         $kpis = [
             'total' => (float) (clone $activas)->sum('total'),
@@ -122,6 +140,7 @@ class VentaController extends Controller
             'credito_dias' => 'nullable|integer|min:1|max:3650',
             'credito_cuotas' => 'nullable|integer|min:1|max:36',
             'descuento' => 'nullable|numeric|min:0',
+            'descuento_tipo' => 'nullable|in:fijo,porcentaje',
             'metodo' => 'nullable|string|max:100',
             'observaciones' => 'nullable|string',
             'items' => 'required|array|min:1',
@@ -191,11 +210,9 @@ class VentaController extends Controller
                 }
 
                 $descuento = round((float) ($data['descuento'] ?? 0), 2);
+                $tipoDescuento = Descuentos::normalizarTipo($data['descuento_tipo'] ?? null);
 
-                $total = max(
-                    0,
-                    round($subtotal - $descuento, 2)
-                );
+                $total = Descuentos::total($subtotal, $descuento, $tipoDescuento);
 
                 $numero = $contadores->siguienteUnico(
                     $data['tipo'] === 'con_factura'
@@ -236,6 +253,8 @@ class VentaController extends Controller
                     'subtotal' => $subtotal,
 
                     'descuento' => $descuento,
+
+                    'descuento_tipo' => $tipoDescuento,
 
                     'total' => $total,
 
@@ -401,7 +420,8 @@ class VentaController extends Controller
                     $detalles[] = compact('producto', 'cantidad', 'precio', 'sub');
                 }
                 $descuento = round((float) ($data['descuento'] ?? 0), 2);
-                $total = max(0, round($subtotal - $descuento, 2));
+                $tipoDescuento = Descuentos::normalizarTipo($data['descuento_tipo'] ?? null);
+                $total = Descuentos::total($subtotal, $descuento, $tipoDescuento);
                 $credito = $this->atributosCredito($data);
 
                 $venta->update([
@@ -415,6 +435,7 @@ class VentaController extends Controller
                     'fecha_vencimiento' => $credito['fecha_vencimiento'],
                     'subtotal' => $subtotal,
                     'descuento' => $descuento,
+                    'descuento_tipo' => $tipoDescuento,
                     'total' => $total,
                     'base_df' => $data['tipo'] === 'con_factura' ? $total : null,
                     'debito_fiscal' => $data['tipo'] === 'con_factura' ? round($total * 0.13, 2) : null,
@@ -817,7 +838,7 @@ class VentaController extends Controller
 
                     $subtotal = round(array_sum(array_map(fn ($it) => $it['cantidad'] * $it['precio'], $items)), 2);
                     $descuento = round((float) ($primera['Descuento'] ?? $primera['descuento'] ?? 0), 2);
-                    $total = max(0, round($subtotal - $descuento, 2));
+                    $total = Descuentos::total($subtotal, $descuento, Descuentos::FIJO);
                     $fecha = trim((string) ($primera['Fecha'] ?? $primera['fecha'] ?? '')) ?: date('Y-m-d');
                     $credito = $this->atributosCredito([
                         'modalidad' => $modalidad,
@@ -838,6 +859,7 @@ class VentaController extends Controller
                         'fecha_vencimiento' => $credito['fecha_vencimiento'],
                         'subtotal' => $subtotal,
                         'descuento' => $descuento,
+                        'descuento_tipo' => Descuentos::FIJO,
                         'total' => $total,
                         'base_df' => $tipo === 'con_factura' ? $total : null,
                         'debito_fiscal' => $tipo === 'con_factura' ? round($total * 0.13, 2) : null,

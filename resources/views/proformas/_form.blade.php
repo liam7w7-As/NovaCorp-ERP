@@ -9,18 +9,26 @@
 <form method="POST" action="{{ $action }}" id="formProforma">
   @csrf
   @if($method === 'PUT') @method('PUT') @endif
+  @php
+    $etiquetaCliente = fn ($cliente) => trim(implode(' · ', [
+      $cliente->nombre,
+      'NIT/CI: '.($cliente->nit ?: 's/n'),
+      'Cel: '.($cliente->telefono ?: 's/n'),
+    ]));
+  @endphp
 
   <div class="card-giseca seccion-form" style="margin-bottom:18px;">
     <h6 style="margin:0 0 14px; border-bottom:2px solid var(--gc-primario); padding-bottom:6px; display:inline-block; font-weight:700;">Datos Generales</h6>
     <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:14px;">
       <div>
         <label class="form-label-giseca">Cliente *</label>
-        <select id="pf_cliente" name="cliente_id" class="form-control-giseca" data-tomselect="{{ route('clientes.buscar') }}" placeholder="Escribe para buscar cliente...">
+          <select id="pf_cliente" name="cliente_id" class="form-control-giseca" data-tomselect="{{ route('clientes.buscar') }}" placeholder="Escribe para buscar cliente...">
           <option value="">-- Seleccionar cliente --</option>
           @foreach($clientes as $c)
-            <option value="{{ $c->id }}" {{ (isset($proforma) && $proforma->cliente_id == $c->id) || old('cliente_id') == $c->id ? 'selected' : '' }}>{{ $c->nombre }} ({{ $c->nit ?: 's/n' }})</option>
+            @php($datosClientePf = ['nombre' => $c->nombre, 'nit' => $c->nit, 'telefono' => $c->telefono, 'correo' => $c->correo, 'direccion' => $c->direccion])
+            <option value="{{ $c->id }}" data-data='@json($datosClientePf)' {{ (isset($proforma) && $proforma->cliente_id == $c->id) || old('cliente_id') == $c->id ? 'selected' : '' }}>{{ $etiquetaCliente($c) }}</option>
           @endforeach
-        </select>
+          </select>
       </div>
       <div><label class="form-label-giseca">Nuevo cliente (opcional)</label><input id="pf_clienteNuevo" name="cliente_nuevo" class="form-control-giseca" placeholder="Escribe para crear uno nuevo" value="{{ old('cliente_nuevo') }}"></div>
       <div></div>
@@ -61,7 +69,7 @@
     <div style="display:flex; justify-content:flex-end; margin-top:14px;">
       <div style="width:300px;">
         <div style="display:flex; justify-content:space-between; padding:4px 0;"><span>Subtotal:</span><strong id="pf_lblSubtotal">0.00</strong></div>
-        <div style="display:flex; justify-content:space-between; align-items:center; padding:4px 0;"><span>Descuento:</span><input type="number" id="pf_descuento" name="descuento" value="{{ isset($proforma) ? $proforma->descuento : old('descuento', 0) }}" min="0" step="0.01" oninput="recalcularProforma()" style="width:100px; border:1px solid var(--gc-borde); border-radius:4px; padding:5px; text-align:right;"></div>
+        <div style="display:flex; justify-content:space-between; align-items:center; padding:4px 0;"><span>Descuento:</span><span style="display:flex; gap:4px; align-items:center;"><select id="pf_descuento_tipo" name="descuento_tipo" onchange="recalcularProforma()" style="border:1px solid var(--gc-borde); border-radius:4px; padding:5px;"><option value="fijo" {{ (isset($proforma) ? ($proforma->descuento_tipo ?? 'fijo') : old('descuento_tipo', 'fijo')) === 'fijo' ? 'selected' : '' }}>Bs</option><option value="porcentaje" {{ (isset($proforma) ? ($proforma->descuento_tipo ?? 'fijo') : old('descuento_tipo', 'fijo')) === 'porcentaje' ? 'selected' : '' }}>%</option></select><input type="number" id="pf_descuento" name="descuento" value="{{ isset($proforma) ? $proforma->descuento : old('descuento', 0) }}" min="0" step="0.01" oninput="recalcularProforma()" style="width:100px; border:1px solid var(--gc-borde); border-radius:4px; padding:5px; text-align:right;"></span></div>
         <div style="display:flex; justify-content:space-between; padding:8px 0; border-top:2px solid var(--gc-texto); margin-top:6px;"><strong>TOTAL GENERAL:</strong><strong id="pf_lblTotal" style="color:var(--gc-primario-oscuro);">Bs 0.00</strong></div>
       </div>
     </div>
@@ -94,6 +102,11 @@ const buscadorPf = document.getElementById('pf_buscador');
 const resultadosPf = document.getElementById('pf_resultados');
 let timerPf = null;
 
+// Escapa texto del servidor antes de inyectarlo al DOM (anti-XSS).
+function escHtmlPf(v) {
+  return String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
 buscadorPf.addEventListener('input', function() {
   clearTimeout(timerPf);
   const t = this.value.trim();
@@ -102,10 +115,10 @@ buscadorPf.addEventListener('input', function() {
     const r = await fetch("{{ route('proformas.buscar-producto') }}?q=" + encodeURIComponent(t), { headers: { 'Accept': 'application/json' } });
     const lista = await r.json();
     resultadosPf.innerHTML = lista.map(p =>
-      `<div class="item" data-id="${p.id}" data-codigo="${p.codigo}" data-desc="${p.descripcion.replace(/"/g, '&quot;')}" data-marca="${(p.marca || '').replace(/"/g, '&quot;')}" data-precio="${p.precio}" data-stock="${p.stock_disponible ?? p.stock}" style="padding:10px 14px; cursor:pointer; border-bottom:1px solid var(--gc-borde); font-size:13px;"><strong>${p.codigo}</strong> — ${p.descripcion} <span style="color:var(--gc-gris-claro)">(${p.marca || ''}) Disponible: ${p.stock_disponible ?? p.stock}</span></div>`
+      `<div class="item" data-id="${p.id}" data-codigo="${escHtmlPf(p.codigo)}" data-interno="${escHtmlPf(p.codigo_interno || '')}" data-desc="${escHtmlPf(p.descripcion)}" data-marca="${escHtmlPf(p.marca || '')}" data-precio="${p.precio}" data-stock="${p.stock_disponible ?? p.stock}" style="padding:10px 14px; cursor:pointer; border-bottom:1px solid var(--gc-borde); font-size:13px;"><strong>${escHtmlPf(p.codigo)}</strong>${p.codigo_interno ? ' <span style="color:var(--gc-gris-claro)">[' + escHtmlPf(p.codigo_interno) + ']</span>' : ''} — ${escHtmlPf(p.descripcion)} <span style="color:var(--gc-gris-claro)">(${escHtmlPf(p.marca || '')}) Disponible: ${p.stock_disponible ?? p.stock}</span></div>`
     ).join('') || '<div class="item" style="padding:10px 14px;">Sin resultados</div>';
     resultadosPf.querySelectorAll('.item[data-id]').forEach(el => {
-      el.addEventListener('click', () => agregarProductoPf({ id: el.dataset.id, codigo: el.dataset.codigo, descripcion: el.dataset.desc, marca: el.dataset.marca, precio: el.dataset.precio }));
+      el.addEventListener('click', () => agregarProductoPf({ id: el.dataset.id, codigo: el.dataset.codigo, interno: el.dataset.interno, descripcion: el.dataset.desc, marca: el.dataset.marca, precio: el.dataset.precio }));
     });
   }, 250);
 });
@@ -117,9 +130,9 @@ function agregarProductoPf(p) {
   const tbody = document.querySelector('#tablaProductos tbody');
   const tr = document.createElement('tr');
   tr.innerHTML = `
-    <td><span class="codigo-chip">${p.codigo}</span><input type="hidden" name="items[${idxPf}][producto_id]" value="${p.id}"></td>
-    <td>${p.descripcion}</td>
-    <td>${p.marca || ''}</td>
+    <td><span class="codigo-chip">${escHtmlPf(p.codigo)}</span>${p.interno ? '<br><small style="color:var(--gc-gris-claro)">' + escHtmlPf(p.interno) + '</small>' : ''}<input type="hidden" name="items[${idxPf}][producto_id]" value="${p.id}"></td>
+    <td>${escHtmlPf(p.descripcion)}</td>
+    <td>${escHtmlPf(p.marca || '')}</td>
     <td><input type="number" step="0.01" min="0.01" name="items[${idxPf}][cantidad]" value="1" class="pf-cant" oninput="recalcularProforma()" style="border:1px solid var(--gc-borde); border-radius:4px; padding:5px 6px; font-size:12.5px; width:100%;"></td>
     <td><input type="number" step="0.01" min="0" name="items[${idxPf}][precio]" value="${p.precio}" class="pf-precio" oninput="recalcularProforma()" style="border:1px solid var(--gc-borde); border-radius:4px; padding:5px 6px; font-size:12.5px; width:100%;"></td>
     <td class="text-end pf-total">${Number(p.precio).toFixed(2)}</td>
@@ -148,9 +161,11 @@ function recalcularProforma() {
     tr.querySelector('.pf-total').textContent = total.toFixed(2);
     subtotal += total;
   });
-  const desc = parseFloat(document.getElementById('pf_descuento').value) || 0;
+  const descVal = parseFloat(document.getElementById('pf_descuento').value) || 0;
+  const descTipo = document.getElementById('pf_descuento_tipo').value;
+  const descMonto = descTipo === 'porcentaje' ? subtotal * Math.min(descVal, 100) / 100 : descVal;
   document.getElementById('pf_lblSubtotal').textContent = subtotal.toFixed(2);
-  document.getElementById('pf_lblTotal').textContent = 'Bs ' + (subtotal - desc).toFixed(2);
+  document.getElementById('pf_lblTotal').textContent = 'Bs ' + Math.max(0, subtotal - descMonto).toFixed(2);
 }
 
 document.getElementById('formProforma').addEventListener('submit', function(e) {

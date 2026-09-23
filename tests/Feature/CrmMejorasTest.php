@@ -145,6 +145,92 @@ class CrmMejorasTest extends TestCase
             ->assertViewHas('hayMas', false);
     }
 
+    public function test_lead_se_elimina_y_aparece_en_papelera(): void
+    {
+        $admin = $this->admin();
+        $lead = Lead::factory()->for(EtapaCrm::inicial(), 'etapa')->create(['nombre' => 'Borrable']);
+
+        $this->actingAs($admin)
+            ->deleteJson(route('crm.leads.destroy', $lead))
+            ->assertOk()
+            ->assertJsonPath('message', 'Lead enviado a papelera.');
+
+        $this->assertTrue($lead->fresh()->trashed());
+
+        $this->actingAs($admin)->get(route('papelera.index'))
+            ->assertOk()
+            ->assertSee('Borrable', false);
+    }
+
+    public function test_vendedor_no_elimina_lead_ajeno(): void
+    {
+        $vendedor = User::factory()->create(['rol' => 'vendedor', 'activo' => true]);
+        $otro = User::factory()->create(['rol' => 'vendedor', 'activo' => true]);
+        $lead = Lead::factory()->for(EtapaCrm::inicial(), 'etapa')->create(['vendedor_id' => $otro->id]);
+
+        $this->actingAs($vendedor)
+            ->deleteJson(route('crm.leads.destroy', $lead))
+            ->assertNotFound();
+        $this->assertFalse($lead->fresh()->trashed());
+    }
+
+    public function test_plantilla_se_envia_por_meta(): void
+    {
+        Http::fake([
+            'https://graph.facebook.com/*' => Http::response([
+                'messaging_product' => 'whatsapp',
+                'messages' => [['id' => 'wamid.tpl.1']],
+            ]),
+        ]);
+
+        $admin = $this->admin();
+        $canal = CanalWhatsapp::factory()->create([
+            'phone_number_id' => 'phone-999',
+            'access_token' => 'token-test',
+            'graph_version' => 'v21.0',
+            'plantilla_nombre' => 'seguimiento_cotizacion',
+            'plantilla_idioma' => 'es',
+        ]);
+        $lead = Lead::factory()->for(EtapaCrm::inicial(), 'etapa')->for($canal, 'canalWhatsapp')->create([
+            'telefono' => '59171234567',
+            'telefono_normalizado' => '59171234567',
+        ]);
+
+        $this->actingAs($admin)
+            ->postJson(route('crm.leads.mensajes.store', $lead), [
+                'mensaje' => 'Seguimos atentos.',
+                'usar_plantilla' => true,
+            ])
+            ->assertOk()
+            ->assertJsonPath('mensaje.tipo', 'plantilla');
+
+        Http::assertSent(function (Request $request): bool {
+            return $request->url() === 'https://graph.facebook.com/v21.0/phone-999/messages'
+                && $request['type'] === 'template'
+                && $request['template']['name'] === 'seguimiento_cotizacion'
+                && $request['template']['components'][0]['parameters'][0]['text'] === 'Seguimos atentos.';
+        });
+    }
+
+    public function test_plantilla_sin_configurar_se_rechaza(): void
+    {
+        $admin = $this->admin();
+        $canal = CanalWhatsapp::factory()->create([
+            'phone_number_id' => 'phone-999',
+            'access_token' => 'token-test',
+            'plantilla_nombre' => null,
+        ]);
+        $lead = Lead::factory()->for(EtapaCrm::inicial(), 'etapa')->for($canal, 'canalWhatsapp')->create();
+
+        $this->actingAs($admin)
+            ->postJson(route('crm.leads.mensajes.store', $lead), [
+                'mensaje' => 'Hola.',
+                'usar_plantilla' => true,
+            ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('mensaje');
+    }
+
     /** @return array<string, mixed> */
     private function payload(string $messageId, string $from): array
     {

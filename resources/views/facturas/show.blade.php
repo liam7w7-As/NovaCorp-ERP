@@ -21,10 +21,10 @@
   <span class="estado {{ $badge[$factura->estado] }}" style="font-size:12.5px; padding:5px 14px;">{{ strtoupper($factura->estado) }}{{ $factura->simulada ? ' · SIMULADA' : '' }}</span>
   <div style="display:flex; gap:6px; flex-wrap:wrap;">
     <button class="btn-giseca btn-oscuro btn-sm" onclick="window.print()"><i class="bi bi-printer"></i> Imprimir</button>
-    <a class="btn-giseca btn-outline btn-sm" href="{{ route('facturas.pdf', $factura) }}" title="Formato Carta Oficial"><i class="bi bi-file-earmark-pdf"></i> Carta</a>
-    <a class="btn-giseca btn-outline btn-sm" href="{{ route('facturas.pdf-medio-oficio', $factura) }}" title="Formato Medio Oficio"><i class="bi bi-file-text"></i> Medio Oficio</a>
-    <a class="btn-giseca btn-outline btn-sm" href="{{ route('facturas.pdf-rollo', $factura) }}" title="Ticket térmico 80mm"><i class="bi bi-receipt"></i> Rollo 80</a>
-    <a class="btn-giseca btn-outline btn-sm" href="{{ route('facturas.pdf-rollo-58', $factura) }}" title="Ticket térmico 58mm"><i class="bi bi-receipt-cutoff"></i> Rollo 58</a>
+    <a class="btn-giseca btn-outline btn-sm" href="{{ route('facturas.pdf', $factura) }}" target="_blank" rel="noopener" title="Formato Carta Oficial"><i class="bi bi-file-earmark-pdf"></i> Carta</a>
+    <a class="btn-giseca btn-outline btn-sm" href="{{ route('facturas.pdf-medio-oficio', $factura) }}" target="_blank" rel="noopener" title="Formato Medio Oficio"><i class="bi bi-file-text"></i> Medio Oficio</a>
+    <a class="btn-giseca btn-outline btn-sm" href="{{ route('facturas.pdf-rollo', $factura) }}" target="_blank" rel="noopener" title="Ticket térmico 80mm"><i class="bi bi-receipt"></i> Rollo 80</a>
+    <a class="btn-giseca btn-outline btn-sm" href="{{ route('facturas.pdf-rollo-58', $factura) }}" target="_blank" rel="noopener" title="Ticket térmico 58mm"><i class="bi bi-receipt-cutoff"></i> Rollo 58</a>
     @if($factura->xml_firmado)<a class="btn-giseca btn-outline btn-sm" href="{{ route('facturas.xml', $factura) }}"><i class="bi bi-file-earmark-code"></i> XML</a>@endif
     <button class="btn-giseca btn-outline btn-sm" onclick="document.getElementById('modalCorreo').classList.add('abierto')" title="Enviar o reenviar factura por correo"><i class="bi bi-envelope"></i> Correo</button>
     @if($factura->estado === 'emitida')

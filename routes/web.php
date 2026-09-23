@@ -109,6 +109,7 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/proformas/buscar-producto', [ProformaController::class, 'buscarProducto'])->name('proformas.buscar-producto');
         Route::post('/proformas/{proforma}/cambiar-estado', [ProformaController::class, 'cambiarEstado'])->name('proformas.cambiar-estado');
         Route::post('/proformas/{proforma}/convertir-venta', [ProformaController::class, 'convertirAVenta'])->name('proformas.convertir-venta');
+        Route::get('/proformas/{proforma}/pdf', [ProformaController::class, 'pdf'])->name('proformas.pdf');
         Route::resource('proformas', ProformaController::class)->except(['destroy']);
     });
     Route::delete('/proformas/{proforma}', [ProformaController::class, 'destroy'])->name('proformas.destroy')->middleware('permiso:admin');
@@ -119,6 +120,7 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/leads', [CrmController::class, 'storeLead'])->name('leads.store');
         Route::get('/leads/{lead}', [CrmController::class, 'showLead'])->name('leads.show');
         Route::put('/leads/{lead}', [CrmController::class, 'updateLead'])->name('leads.update');
+        Route::delete('/leads/{lead}', [CrmController::class, 'destroyLead'])->name('leads.destroy');
         Route::patch('/leads/{lead}/etapa', [CrmController::class, 'cambiarEtapa'])->name('leads.etapa');
         Route::patch('/leads/{lead}/ficha', [CrmController::class, 'actualizarFicha'])->name('leads.ficha');
         Route::post('/leads/{lead}/mensajes', [CrmController::class, 'enviarMensaje'])->name('leads.mensajes.store');

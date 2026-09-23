@@ -215,6 +215,88 @@ class MetaWhatsappService
         return $mensaje;
     }
 
+    /**
+     * Envía una plantilla aprobada de Meta (sirve fuera de la ventana de
+     * 24h). El texto viaja como único parámetro {{1}} del cuerpo.
+     */
+    public function enviarPlantilla(Lead $lead, User $usuario, string $texto): MensajeWhatsapp
+    {
+        $lead->loadMissing('canalWhatsapp');
+        $canal = $lead->canalWhatsapp;
+
+        if (! $canal instanceof CanalWhatsapp) {
+            throw ValidationException::withMessages([
+                'mensaje' => 'El lead no tiene una línea comercial de WhatsApp asociada.',
+            ]);
+        }
+
+        $token = $this->tokenParaCanal($canal);
+        $phoneNumberId = $canal->phone_number_id;
+
+        if (! $token || ! $phoneNumberId) {
+            throw ValidationException::withMessages([
+                'mensaje' => 'Falta configurar el token o Phone Number ID de esta línea.',
+            ]);
+        }
+
+        if (! filled($canal->plantilla_nombre)) {
+            throw ValidationException::withMessages([
+                'mensaje' => 'Esta línea no tiene plantilla de Meta configurada (ver Líneas).',
+            ]);
+        }
+
+        $texto = mb_substr(trim($texto), 0, 1000);
+        $payload = [
+            'messaging_product' => 'whatsapp',
+            'recipient_type' => 'individual',
+            'to' => $lead->telefono_normalizado,
+            'type' => 'template',
+            'template' => [
+                'name' => $canal->plantilla_nombre,
+                'language' => ['code' => $canal->plantilla_idioma ?: 'es'],
+                'components' => [[
+                    'type' => 'body',
+                    'parameters' => [['type' => 'text', 'text' => $texto]],
+                ]],
+            ],
+        ];
+
+        try {
+            $response = Http::withToken($token)
+                ->acceptJson()
+                ->timeout((int) config('services.meta_whatsapp.timeout', 12))
+                ->post($this->urlMensajes($canal), $payload)
+                ->throw();
+        } catch (RequestException $exception) {
+            $canal->forceFill([
+                'estado' => 'error',
+                'ultimo_error' => $exception->response?->json('error.message') ?? $exception->getMessage(),
+            ])->save();
+
+            throw ValidationException::withMessages([
+                'mensaje' => 'Meta rechazó la plantilla: '.($canal->ultimo_error ?: 'revisa que esté aprobada.'),
+            ]);
+        }
+
+        $mensaje = MensajeWhatsapp::create([
+            'lead_id' => $lead->id,
+            'canal_whatsapp_id' => $canal->id,
+            'enviado_por_id' => $usuario->id,
+            'meta_message_id' => Arr::get($response->json(), 'messages.0.id'),
+            'direccion' => 'saliente',
+            'tipo' => 'plantilla',
+            'contenido' => $texto,
+            'estado' => 'enviado',
+            'payload' => $payload,
+            'ocurrio_at' => now(),
+        ]);
+
+        $lead->forceFill(['ultima_interaccion_at' => now()])->save();
+        $canal->forceFill(['estado' => 'conectado', 'ultimo_error' => null])->save();
+
+        return $mensaje;
+    }
+
     public function reenviarMensaje(MensajeWhatsapp $mensaje, User $usuario): MensajeWhatsapp
     {
         if ($mensaje->direccion !== 'saliente' || $mensaje->estado !== 'error') {

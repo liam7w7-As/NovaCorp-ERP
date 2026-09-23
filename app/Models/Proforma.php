@@ -14,7 +14,7 @@ class Proforma extends Model
 
     protected $fillable = [
         'numero', 'fecha', 'validez', 'cliente_id', 'cliente_nombre',
-        'estado', 'subtotal', 'descuento', 'total', 'nota', 'reserva_stock',
+        'estado', 'subtotal', 'descuento', 'descuento_tipo', 'total', 'nota', 'reserva_stock',
         'usuario_id', 'venta_id', 'contacto', 'telefono',
         'tiempo_entrega', 'condiciones_pago', 'garantia',
     ];

@@ -27,17 +27,24 @@ class ProformaService
 
     /**
      * Calcula subtotal/descuento/total a partir de items [cantidad, precio].
+     * $descuento es monto fijo (Bs) o porcentaje según $tipo.
      */
-    public function calcularTotales(array $items, float $descuento = 0): array
+    public function calcularTotales(array $items, float $descuento = 0, ?string $tipo = Descuentos::FIJO): array
     {
         $subtotal = 0;
         foreach ($items as $it) {
             $subtotal = round($subtotal + round((float) $it['cantidad'], 2) * round((float) $it['precio'], 2), 2);
         }
+        $tipo = Descuentos::normalizarTipo($tipo);
         $descuento = round($descuento, 2);
-        $total = max(0, round($subtotal - $descuento, 2));
+        $total = Descuentos::total($subtotal, $descuento, $tipo);
 
-        return compact('subtotal', 'descuento', 'total');
+        return [
+            'subtotal' => $subtotal,
+            'descuento' => $descuento,
+            'descuento_tipo' => $tipo,
+            'total' => $total,
+        ];
     }
 
     public function cambiarEstado(Proforma $proforma, string $estado): Proforma
@@ -124,6 +131,7 @@ class ProformaService
                 'fecha_vencimiento' => $fechaVencimiento,
                 'subtotal' => $proforma->subtotal,
                 'descuento' => $proforma->descuento,
+                'descuento_tipo' => $proforma->descuento_tipo ?? Descuentos::FIJO,
                 'total' => $proforma->total,
                 'base_df' => $tipo === 'con_factura' ? $proforma->total : null,
                 'debito_fiscal' => $tipo === 'con_factura' ? round((float) $proforma->total * 0.13, 2) : null,
